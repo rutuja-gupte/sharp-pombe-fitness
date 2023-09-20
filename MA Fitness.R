@@ -20,14 +20,22 @@ assay.data <- read.delim("Rutuja 04 10.txt")
 # changing the format of time to be quarter hour increments
 assay.data$Time<-seq(from=0.25,by=0.25,length.out=nrow(assay.data))
 
-# calculate slopes
-d$slope <- sapply(c(1:nrow(d)), function(r){
-  spline.slope(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
-})
-
 #Author: Rutuja Gupte
 
 library(dplyr)
+
+l <- list.files()
+dfs <- lapply(l[endsWith(l, '.csv')], function(r){
+  data <- read.csv(r)
+  data$fname = r
+  # calculate slopes
+  data$slope <- sapply(c(1:nrow(d)), function(r){
+    spline.slope(assay.data$Time, assay.data[,which(names(assay.data)==data$well[r])])
+  })
+  return(data)
+})
+
+d <- dfs %>% reduce(bind_rows)
 
 df <- d %>%
   group_by(treatment) %>% 
@@ -52,4 +60,3 @@ ggplot(trial %>% filter(category %in% c('H', 'D'))) +
   facet_grid(rows = vars(category)) + 
   geom_vline(xintercept=1, color='red')
 
-trial %>% filter(category %in% c('H', 'D')) %>% summarise(mean(fit))
