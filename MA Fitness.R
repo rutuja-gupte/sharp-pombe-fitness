@@ -10,16 +10,6 @@ spline.slope<-function(x, y, n=101, eps=1e-5, span=0.2){
 nderiv <- function(fit, x, eps=1e-5){
   (predict(fit, x + eps) - predict(fit, x - eps))/(2 * eps)}
 
-
-# load the file that indicates treatments in different wells
-# d <- read.csv("Ref 04 06.csv")
-
-# load the OD data
-# assay.data <- read.delim("Rutuja 04 10.txt")
-
-# changing the format of time to be quarter hour increments
-# assay.data$Time<-seq(from=0.25,by=0.25,length.out=nrow(assay.data))
-
 #Author: Rutuja Gupte
 
 library(dplyr)
@@ -54,8 +44,8 @@ dates.2 <- c('Ref 04 28.csv', 'Ref 04 30.csv', 'Ref 05 03.csv', 'Ref 05 05.csv')
 ancestors <- c('H1', 'H2', 'H3', 'D1', 'D2', 'D3')
 ancestors.haploid <- c('H1', 'H2', 'H3')
 ancestors.diploid <- c('D1', 'D2', 'D3')
-avg.haploid <- as.numeric(df.raw %>% filter(treatment %in% ancestors.haploid) %>% summarize(avg = mean(avg)))
-avg.diploid <- as.numeric(df.raw %>% filter(treatment %in% ancestors.diploid) %>% summarize(avg = mean(avg)))
+# avg.haploid <- as.numeric(df.raw %>% filter(treatment %in% ancestors.haploid) %>% summarize(avg = mean(avg)))
+# avg.diploid <- as.numeric(df.raw %>% filter(treatment %in% ancestors.diploid) %>% summarize(avg = mean(avg)))
 
 df <- df.raw
 df$treatment[df$treatment == 'Blank'] <- '0'
@@ -67,7 +57,10 @@ df$treatment[df$treatment == 'H3'] <- '105'
 df$treatment[df$treatment == 'D3'] <- '106'
 df$treatment <- as.numeric(df$treatment)
 
-df <- df %>% mutate(fit = case_when(treatment == 0 ~ 0,
+
+df <- df %>%
+  mutate(dates = ifelse(fname %in% dates.1, 1, 2)) %>%
+  mutate(fit = case_when(treatment == 0 ~ 0,
                                     treatment > 100 ~ 1,
                                     treatment %% 2 == 0 ~ avg/avg.diploid,
                                     treatment %% 2 == 1 ~ avg/avg.haploid)) %>%

@@ -1,0 +1,325 @@
+---
+title: "MA Fitness"
+author: "Rutuja Gupte"
+date: "2023-09-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+title: "MA Fitness"
+author: "Dr Nathaniel Sharp"
+---
+
+- this fits a spline to y=OD versus x=time, and then finds the maximum slope
+```{r}
+spline.slope<-function(x, y, n=101, eps=1e-5, span=0.2){
+  max(nderiv(loess(log(y) ~ x, degree=1, span=span), seq(min(x), max(x), length=n)), na.rm=TRUE)
+}
+```
+
+- used by the function above to get a local (linear) slope around a point
+
+```{r}
+nderiv <- function(fit, x, eps=1e-5){
+  (predict(fit, x + eps) - predict(fit, x - eps))/(2 * eps)}
+
+```
+
+---
+title: "MA Fitness"
+author: "Rutuja Gupte"
+---
+
+Import Statements
+```{r}
+library(dplyr)
+library(stringr)
+library(tidyverse)
+```
+
+Load all files and setup variables
+```{r}
+l <- list.files()
+
+# read all data into a list of data frames
+dfs <- lapply(l[endsWith(l, '.csv')], function(r){
+  d <- read.csv(r)
+  
+  assay.name <- str_replace(str_replace(r, 'Ref', 'Rutuja'), '.csv', '.txt')
+  assay.data <- read.delim(assay.name)
+  assay.data$Time<-seq(from=0.25,by=0.25,length.out=nrow(assay.data))
+  # calculate slopes
+  d$slope <- sapply(c(1:nrow(d)), function(r){
+    spline.slope(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
+  })
+  
+  d$date <- mdy(str_replace(str_replace(r, 'Ref ', ''), '.csv', ' 2023'))
+  return(d)
+})
+
+# merge the list of data frames
+d <- dfs %>% reduce(bind_rows)
+
+dates.1 <- seq(mdy(04062023), mdy(04102023), 1)
+dates.2 <- seq(mdy(04282023), mdy(05052023), 1)
+ancestors <- c('H1', 'H2', 'H3', 'D1', 'D2', 'D3')
+ancestors.haploid <- c('H1', 'H2', 'H3')
+ancestors.diploid <- c('D1', 'D2', 'D3')
+```
+
+Adding additional information for categorization
+```{r}
+d$label <- d$treatment
+d$label[d$treatment == 'Blank'] <- '0'
+d$label[d$treatment == 'H1'] <- '101'
+d$label[d$treatment == 'D1'] <- '102'
+d$label[d$treatment == 'H2'] <- '103'
+d$label[d$treatment == 'D2'] <- '104'
+d$label[d$treatment == 'H3'] <- '105'
+d$label[d$treatment == 'D3'] <- '106'
+d$label <- as.numeric(d$label)
+
+d <- d %>% mutate(category = case_when(label == 0 ~ 'Blank',
+                              label > 100 & label %% 2 == 0 ~ 'Diploid',
+                              label > 100 & label %% 2 == 1 ~ 'Haploid',
+                              label %% 2 == 0 ~ 'D',
+                              label %% 2 == 1 ~ 'H'))
+```
+
+
+Use dates before taking averaging to check for day effects
+```{r}
+d %>% ggplot() + geom_point(aes(x=as.character(date), y=slope, color=category))
+```
+
+Calculate the average slope by grouping by date. Then use those averages from ancestors to calculate the average relative fitness for each 
+```{r}
+df <- d %>% group_by(date, label) %>%
+  summarize(fit = mean(slope)) %>% 
+  mutate(category = case_when(label == 0 ~ 'Blank',
+                              label > 100 & label %% 2 == 0 ~ 'Diploid',
+                              label > 100 & label %% 2 == 1 ~ 'Haploid',
+                              label %% 2 == 0 ~ 'D',
+                              label %% 2 == 1 ~ 'H'))
+
+df.ancestors <- df %>% filter(label > 100) %>%
+  group_by(date, category) %>% summarize(avg.fit = mean(fit)) %>% 
+  group_by(date) %>% summarize(hap=mean(avg.fit[category=='Haploid']), dip=mean(avg.fit[category=='Diploid'])) %>% as.data.frame()
+row.names(df.ancestors) <- df.ancestors$date
+
+df$a.fit <- apply(df, 1, function(r){
+  if(r['category'] %in% c('Haploid', 'H')) {
+    coln = 'hap'
+  } 
+  else if(r['category'] %in% c('Diploid', 'D')) {
+    coln = 'dip'
+  }
+  else {coln = 'NA'}
+  return(as.numeric(df.ancestors[r['date'], coln]))
+})
+
+df$a.fit <- as.numeric(df$a.fit)
+df <- df %>% mutate(rel.fit = ifelse(label == 0, fit, fit/a.fit))
+```
+
+Plot the relative fitness
+```{r}
+df %>% filter(category != 'Blank') %>% ggplot() +
+  geom_histogram(aes(x=rel.fit, fill=category)) +
+  facet_grid(rows = vars(category)) +
+  geom_vline(xintercept=1, color='red')
+```
+
+t test for mutants
+```{r}
+mut.hap <- df$rel.fit[df$category == 'H']
+mut.dip <- df$rel.fit[df$category == 'D']
+
+t.test(mut.hap, mu=1)
+t.test(mut.dip, mu=1)
+```
+
+two sample t test comparing max slopes of ancestors and mutants
+```{r}
+all.mut.hap <- d %>% filter(d$category == 'H') %>%
+  group_by(date, treatment) %>% summarize(slope = mean(slope))
+
+
+all.anc.hap <- d %>% filter(d$category == 'Haploid')
+```
+
+
+
+
+
+
+
+
+
+```{r}
+# # calculate the average slope for each treatment
+# df.raw <- d %>%
+#   group_by(treatment) %>% 
+#   summarise(avg = mean(slope))
+# 
+# # set up variables
+# dates.1 <- c('Ref 04 06.csv', 'Ref 04 08.csv', 'Ref 04 09.csv', 'Ref 04 10.csv')
+# dates.2 <- c('Ref 04 28.csv', 'Ref 04 30.csv', 'Ref 05 03.csv', 'Ref 05 05.csv')
+# 
+# ancestors <- c('H1', 'H2', 'H3', 'D1', 'D2', 'D3')
+# ancestors.haploid <- c('H1', 'H2', 'H3')
+# ancestors.diploid <- c('D1', 'D2', 'D3')
+# avg.haploid <- as.numeric(df.raw %>% filter(treatment %in% ancestors.haploid) %>% summarize(avg = mean(avg)))
+# avg.diploid <- as.numeric(df.raw %>% filter(treatment %in% ancestors.diploid) %>% summarize(avg = mean(avg)))
+# 
+# # convert treatment column to numeric
+# df <- df.raw
+# df$treatment[df$treatment == 'Blank'] <- '0'
+# df$treatment[df$treatment == 'H1'] <- '101'
+# df$treatment[df$treatment == 'D1'] <- '102'
+# df$treatment[df$treatment == 'H2'] <- '103'
+# df$treatment[df$treatment == 'D2'] <- '104'
+# df$treatment[df$treatment == 'H3'] <- '105'
+# df$treatment[df$treatment == 'D3'] <- '106'
+# df$treatment <- as.numeric(df$treatment)
+# 
+# df <- df %>% mutate(fit = case_when(treatment == 0 ~ 0,
+#                                     treatment > 100 ~ 1,
+#                                     treatment %% 2 == 0 ~ avg/avg.diploid,
+#                                     treatment %% 2 == 1 ~ avg/avg.haploid)) %>%
+#   mutate(category = case_when(treatment == 0 ~ 'Blank',
+#                               treatment > 100 & treatment %% 2 == 0 ~ 'Diploid',
+#                               treatment > 100 & treatment %% 2 == 1 ~ 'Haploid',
+#                               treatment %% 2 == 0 ~ 'D',
+#                               treatment %% 2 == 1 ~ 'H'))
+
+```
+
+Plot the relative
+```{r}
+# df %>% filter(category %in% c('H', 'D')) %>% ggplot() +
+#   geom_histogram(aes(x=fit), color='black') +
+#   facet_grid(rows = vars(category)) + 
+#   geom_vline(xintercept=1, color='red')
+```
+
+Checking if there is any difference between haploid and diploid controls
+```{r}
+# #D1 from second set might be diploids. Filter for that.
+# dip.hunt <- d
+# dip.hunt <- d %>% filter(treatment %in% ancestors) %>%
+#   mutate(dip = ifelse(fname %in% 
+#                         dates.2 &
+#                         treatment == 'D1', 'Yes', 'No'))
+# 
+# dip.hunt %>% ggplot() +
+#   geom_point(aes(x=treatment, y=slope)) + 
+#   facet_grid(cols=vars(dip))
+# 
+# # Noticed that H3 from second set were doing funny stuff.
+# dip.hunt <- d
+# dip.hunt <- d %>% filter(treatment %in% ancestors) %>%
+#   mutate(dip = ifelse(fname %in% 
+#                         dates.2 &
+#                         treatment == 'H3', 'Yes', 'No'))
+# 
+# dip.hunt %>% ggplot() +
+#   geom_point(aes(x=treatment, y=slope)) + 
+#   facet_grid(cols=vars(dip))
+# 
+# #ANOVA for controls
+# ctrl <- d %>% mutate(dates = ifelse(fname %in% dates.1, 1, 2)) %>%
+#   filter(treatment %in% ancestors) %>%
+#   mutate(group = paste(treatment, dates, sep = ":"))
+# 
+# mod <- aov(ctrl$slope ~ ctrl$group)
+# summary(mod)
+# plot(fitted(mod), resid(mod))
+# qqnorm(resid(mod))
+# 
+# #tukey for all combinations
+# tukey.multiplier <- qtukey(0.95, nmeans = 12, df = 1418)/sqrt(2)
+# counts <- count(ctrl, group)
+# means <- ctrl %>% group_by(group) %>% summarize(average = mean(slope))
+# MS_e <- 0.00215
+# 
+# for (i in seq(1, 12)){
+#   for (j in seq(1,12)){
+#     moe_ij <- tukey.multiplier * sqrt(MS_e*(1/counts$n[i] + 1/counts$n[j]))
+#     pe_ij <- means$average[i] - means$average[j]
+#     ci_ij <- c(pe_ij - moe_ij, pe_ij + moe_ij)
+#     if (ci_ij[1] < 0 && ci_ij[2] > 0) {
+#       next
+#     }
+#     else {
+#       print(paste(counts$group[i], counts$group[j], sep=' - '))
+#     }
+#   }
+# }
+# 
+# #t test D1 vs everybody
+# d1 <- ctrl %>% filter(treatment == 'D1')
+# not.d1 <- ctrl %>% filter(treatment %in% ancestors & treatment != 'D1')
+# t.test(d1$slope, not.d1$slope, var.equal = F)
+# 
+# #t test D1:2 vs everybody
+# d1 <- ctrl %>% filter(group == 'D1:2')
+# not.d1 <- ctrl %>% filter(treatment %in% ancestors & group != 'D1:2')
+# t.test(d1$slope, not.d1$slope, var.equal = F)
+# 
+# #t test D2 vs everybody
+# d2 <- ctrl %>% filter(treatment == 'D2')
+# not.d2 <- ctrl %>% filter(treatment %in% ancestors & treatment != 'D2')
+# t.test(d2$slope, not.d2$slope, var.equal = F)
+# 
+# #t test D2 vs diploids
+# d2 <- ctrl %>% filter(treatment == 'D2')
+# not.d2 <- ctrl %>% filter(treatment %in% ancestors.diploid & treatment != 'D2')
+# t.test(d2$slope, not.d2$slope, var.equal = F)
+# 
+# #t test D3 vs everybody
+# d3 <- ctrl %>% filter(treatment == 'D3')
+# not.d3 <- ctrl %>% filter(treatment %in% ancestors & treatment != 'D3')
+# t.test(d3$slope, not.d3$slope, var.equal = T)
+# t.test(d3$slope, not.d3$slope, var.equal = F)
+# 
+# 
+# #t test haploids vs diploids
+# dip <- ctrl %>% filter(group == 'D1:2')
+# hap <- ctrl %>% filter(treatment %in% ancestors.haploid)
+# t.test(dip$slope, hap$slope, var.equal = F)
+# 
+# #t test D1:2 vs everybody
+# dip <- ctrl %>% filter(group == 'D1:2')
+# hap <- ctrl %>% filter(treatment %in% ancestors.haploid)
+# t.test(dip$slope, hap$slope, var.equal = F)
+
+
+
+#t test mutant dip vs mutant hap
+
+###########
+# NEXT STEP: FOR REL FITNESS, USE CONTROLS FROM THE SAME ASSAY
+
+
+```
+
+
+Leftover code from previous version for graphing:
+
+trial %>% filter(category %in% c('H', 'D')) %>% ggplot() +
+  geom_point(aes(x=as.numeric(treatment), y=fit, color=category)) +
+  geom_smooth(aes(x=as.numeric(treatment), y=fit, color=category), method='lm', se=FALSE)
+
+
+hap.mut <- trial %>% filter(category == 'H')
+dip.mut <- trial %>% filter(category == 'D')
+mut <- merge(hap.mut, dip.mut, by='row.names')
+
+mut %>% ggplot() + geom_point(aes(x=fit.x, y=fit.y))
+
+
