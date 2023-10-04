@@ -2,7 +2,9 @@
 title: "MA Fitness"
 author: "Rutuja Gupte"
 date: "2023-09-21"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -52,6 +54,7 @@ dfs <- lapply(l[endsWith(l, '.csv')], function(r){
   
   assay.name <- str_replace(str_replace(r, 'Ref', 'Rutuja'), '.csv', '.txt')
   assay.data <- read.delim(assay.name)
+  # Change time column to 0, 0.25, 0.5, ...
   assay.data$Time<-seq(from=0.25,by=0.25,length.out=nrow(assay.data))
   # calculate slopes
   d$slope <- sapply(c(1:nrow(d)), function(r){
@@ -69,6 +72,8 @@ dates.1 <- seq(mdy(04062023), mdy(04102023), 1)
 dates.2 <- seq(mdy(04282023), mdy(05052023), 1)
 ancestors <- c('H1', 'H2', 'H3', 'D1', 'D2', 'D3')
 ancestors.haploid <- c('H1', 'H2', 'H3', 'D2', 'D3')
+anc.hap.og <- c('H1', 'H2', 'H3')
+anc.hap.fake <- c('D2', 'D3')
 ancestors.diploid <- c('D1')
 fake.haploids <- c(81)
 fake.diploids <- c(20, 28, 48, 52, 54, 84, 100)
@@ -89,18 +94,45 @@ d$label <- as.numeric(d$label)
 d <- d %>% mutate(category = case_when(label == 0 ~ 'Blank',
                               label > 100 & label %% 2 == 0 ~ 'Diploid',
                               label > 100 & label %% 2 == 1 ~ 'Haploid',
-                              label %% 2 == 0 ~ 'D',
-                              label %% 2 == 1 ~ 'H'))
+                              label %% 2 == 0 ~ 'MA.D',
+                              label %% 2 == 1 ~ 'MA.H'))
 
-d <- d %>% mutate(category = ifelse(label %in% fake.diploids, 'H', category))
-d <- d %>% mutate(category = ifelse(label %in% fake.haploids, 'D', category))
+d <- d %>% mutate(category = ifelse(label %in% fake.diploids, 'MA.H', category))
+d <- d %>% mutate(category = ifelse(label %in% fake.haploids, 'MA.D', category))
 ```
 
 
 Use dates before taking averaging to check for day effects
 ```{r}
-d %>% ggplot() + geom_point(aes(x=as.character(date), y=slope, color=category))
+# d %>% ggplot() + geom_point(aes(x=as.character(date), y=slope, color=category))
+
+d %>% ggplot() + geom_point(aes(x=category, y=slope, color=category)) + facet_wrap(vars(date))
 ```
+
+Outlier Hunt
+```{r}
+d %>% slice_min(order_by = slope, n=30)
+mean(d$slope)
+median(d$slope)
+min(d$slope)
+max(d$slope)
+
+d %>% filter(slope < 0.025) %>%
+  count(date)
+
+d %>% filter(slope < 0.025) %>% count(treatment)
+
+d %>% filter(slope < 0.1) %>%
+  group_by(slope) %>%
+  summarize(ct = n()) %>% ggplot() + geom_point(aes(x=slope, y=ct))
+
+mean(d$slope < 0.025 & d$treatment != 'Blank')
+quantile(d$slope, 0.06119792)
+```
+
+
+
+
 
 Calculate the average slope by grouping by date. Then use those averages from ancestors to calculate the average relative fitness for each 
 ```{r}
@@ -194,8 +226,8 @@ d.lmer <- d.lmer %>% mutate(ploidy = ifelse(category %in% c('Haploid', 'H'),
 
 lmer from lme4 package
 ```{r}
-null.model <- lmer(slope~ancestry+ploidy+(1|date), d.lmer)
-full.model <- lmer(slope~ancestry*ploidy+(1|date), d.lmer)
+null.model <- lmer(slope~ancestry+ploidy+(1|date)+(1|label), d.lmer)
+full.model <- lmer(slope~ancestry*ploidy+(1|date)+(1|label), d.lmer)
 
 mod <- anova(null.model,full.model)
 mod
@@ -206,6 +238,29 @@ lmer from lme4 package with plate placement
 ```{r}
 null.model <- lmer(slope~ancestry+ploidy+(1|date)+(1|well), d.lmer)
 full.model <- lmer(slope~ancestry*ploidy+(1|date)+(1|well), d.lmer)
+
+mod <- anova(null.model,full.model)
+mod
+```
+
+lmer from lme4 package with Dr Sharp - ancestors
+```{r}
+full.model <- lmer(slope~ploidy+(1|date)+(1|label), d.lmer[d.lmer$ancestry=='Ancestor',])
+null.model <- lmer(slope~1+(1|date)+(1|label), d.lmer[d.lmer$ancestry=='Ancestor',])
+
+mod <- anova(null.model,full.model)
+mod
+```
+
+```{r}
+summary(full.model)
+```
+
+
+lmer from lme4 package with Dr Sharp - ancestors
+```{r}
+full.model <- lmer(slope~1+(1|date)+(1|label), d.lmer[d.lmer$category=='Haploid',])
+null.model <- lmer(slope~1+(1|date), d.lmer[d.lmer$category=='Haploid',])
 
 mod <- anova(null.model,full.model)
 mod
