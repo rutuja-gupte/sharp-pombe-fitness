@@ -42,6 +42,7 @@ library(dplyr)
 library(stringr)
 library(tidyverse)
 library(lme4)
+# lib vioplot for violin plot
 ```
 
 - this fits a spline to y=OD versus x=time, and then finds the time-stamp for maximum slope
@@ -53,15 +54,15 @@ spline.time<-function(x, y, n=101, eps=1e-5, span=0.2){
 
 - this fits a linear regression model and extracts the slope
 ```{r}
-well.lm <- function(x, y){
+well.lm.slope <- function(x, y){
   lm(y ~ x)$coefficients[2]
 }
 ```
 
-- this fits a linear regression model and extracts the p value
+- this fits a linear regression model and extracts the sum of squared residuals
 ```{r}
-well.lm.p <- function(x, y){
-  lm(y ~ x)$coefficients[2,4]
+well.lm.sse <- function(x, y){
+  sum((summary(lm(y~x))$residuals)^2)
 }
 ```
 
@@ -82,17 +83,29 @@ dfs <- lapply(l[endsWith(l, '.csv')], function(r){
     spline.slope(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
   })
   
+  d$initial <- sapply(c(1:nrow(d)), function(r){
+    mean(assay.data[,which(names(assay.data)==d$well[r])][1:4])
+  })
+  
+  d$final <- sapply(c(1:nrow(d)), function(r){
+    temp <- assay.data[,which(names(assay.data)==d$well[r])]
+    temp <- temp[!is.na(temp)]
+     n <- length(temp)
+    mean(assay.data[,which(names(assay.data)==d$well[r])][n-3:n])
+  })
+
+  
   # calculate time stamps for max slop
   d$time <- sapply(c(1:nrow(d)), function(r){
     spline.time(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
   })
   
-  d$lm <- sapply(c(1:nrow(d)), function(r){
-    well.lm(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
+  d$lm.slope <- sapply(c(1:nrow(d)), function(r){
+    well.lm.slope(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
   })
   
-  d$p <- sapply(c(1:nrow(d)), function(r){
-    well.lm(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
+  d$sse <- sapply(c(1:nrow(d)), function(r){
+    well.lm.sse(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
   })
   
   d$time <- assay.data$Time[d$time]
@@ -121,7 +134,7 @@ fake.haploids <- c(81)
 fake.diploids <- c(20, 28, 48, 52, 54, 84, 100)
 ```
 
-Adding additional information for categorization
+Adding additional information for categorization. Exluding MA lines that changed ploidy. Excluding batch 1 due to lack of diploid controls.
 ```{r}
 d$batch[d$date %in% dates.1] <- 1
 d$batch[d$date %in% dates.2] <- 2
@@ -155,7 +168,8 @@ Use dates before taking averaging to check for day effects
 ```{r}
 # d %>% ggplot() + geom_point(aes(x=as.character(date), y=slope, color=category))
 
-d %>% ggplot() + geom_point(aes(x=category, y=slope, color=category)) + facet_wrap(vars(date))
+d %>%
+  filter(category == 'Ctrl.H') %>% ggplot() + geom_point(aes(x=treatment, y=slope, color=treatment)) + facet_wrap(vars(date))
 ```
 
 Outlier Hunt
@@ -216,10 +230,10 @@ Remove the outlier blanks and the other blanks from the actual data
 ```{r}
 df <- anti_join(d, bad.blanks)
 df <- full_join(df, dates.predict, by=join_by(date))
-df <- df %>% filter(slope > null)
+df <- df %>% filter(slope >= null)
 ```
 
-Plot the date yet again
+Plot the data yet again
 ```{r}
 df %>% ggplot() + geom_point(aes(x=category, y=slope, color=category)) + facet_wrap(vars(date))
 ```
@@ -235,12 +249,12 @@ Remove the outlier blanks and the other blanks from the actual data
 ```{r}
 df2 <- anti_join(d, bad.blanks)
 df2 <- full_join(df2, dates.predict2, by=join_by(date))
-df2 <- df2 %>% filter(slope > null)
+df2 <- df2 %>% filter(slope >= null)
 ```
 
 Plot the date yet again
 ```{r}
-df %>% ggplot() + geom_point(aes(x=category, y=slope, color=category)) + facet_wrap(vars(date))
+df2 %>% ggplot() + geom_point(aes(x=category, y=slope, color=category)) + facet_wrap(vars(date))
 ```
 
 Finding the difference between the two outlier methods
@@ -250,7 +264,6 @@ diff %>% select(well, date) %>% count(date)
 
 diff %>% filter(date == dmy(28042023)) %>% select(well)
 diff %>% filter(date == dmy(30042023)) %>% select(well)
-diff %>% filter(date == dmy(05052023)) %>% select(well)
 ```
 
 > Important Note: The 15 curves that are different between the two approaches are all bad curves (based on their plots). I would prefer to exclude those.
@@ -276,24 +289,64 @@ df2 %>%
 
 > More filtering required on the data...
 
-```{r}
-df2 %>% ggplot() + geom_point(aes(x=category, y=time, color=category)) + facet_wrap(vars(date))
-```
-
-```{r}
-df2 %>% ggplot() + geom_histogram(aes(x=time), fill='black')
-```
 
 Filtering based on slope of linear model
 ```{r}
-df2 <- df2 %>% filter(lm >= 0)
+df <- df %>% filter(lm.slope >= 0)
+df2 <- df2 %>% filter(lm.slope >= 0)
 ```
 
-Filtering on how well linear model fits
 ```{r}
-df2 %>% ggplot() + geom_histogram(aes(x=p), fill='black')
+diff <- anti_join(d, df, by=join_by(well, date))
+diff %>% select(well, date) %>% count(date)
+diff %>% filter(date == ymd(20230503)) %>% 
+  select(well) %>% as.vector %>% print()
+
+
+diff <- anti_join(d, df2, by=join_by(well, date))
+diff %>% select(well, date) %>% count(date)
+diff %>% filter(date == ymd(20230503)) %>% 
+  select(well) %>% as.vector %>% print()
 ```
 
+Plotting even more
+
+Plotting the time stamp for max slope
+```{r}
+df %>% ggplot() + geom_point(aes(x=category, y=time, color=category)) + facet_wrap(vars(date))
+```
+
+```{r}
+df %>% filter(!(category == 'Blank')) %>% filter(time<10) %>% ggplot() + geom_histogram(aes(x=time), fill='black')
+
+df %>% filter(time<1) %>% 
+  filter(date == ymd(20230503)) %>% select(well) %>%
+  as.vector()
+```
+
+Plotting to explore the linear models
+```{r}
+df2 %>% filter(!(category == 'Blank')) %>% ggplot() + geom_histogram(aes(x=lm.slope), fill='black')
+
+df2 %>% filter(!(category == 'Blank')) %>% ggplot() + geom_histogram(aes(x=sse), fill='black')
+```
+
+Plotting for more factors
+```{r}
+df$delta = df$final - df$initial
+df %>%
+  ggplot() + 
+  geom_histogram(aes(x=initial), fill = "red", alpha = 0.5) +
+  geom_vline(xintercept = mean(good.blanks$initial))
+  # geom_histogram(aes(x=final), fill = "blue", alpha = 0.5) + 
+  # geom_histogram(aes(x=delta), fill = "green", alpha = 0.5) 
+
+
+#if the OD decreases at the end, remove the replicates
+df %>% filter(delta < 0) %>% 
+  filter(date == ymd(20230503)) %>% select(well) %>%
+  as.vector()
+```
 
 
 
