@@ -1,0 +1,287 @@
+---
+title: "MA Fitness"
+author: "Rutuja Gupte"
+date: "2023-09-21"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+title: "MA Fitness"
+author: "Dr Nathaniel Sharp"
+---
+
+- this fits a spline to y=OD versus x=time, and then finds the maximum slope
+```{r}
+spline.slope<-function(x, y, n=101, eps=1e-5, span=0.2){
+  max(nderiv(loess(log(y) ~ x, degree=1, span=span), seq(min(x), max(x), length=n)), na.rm=TRUE)
+}
+```
+
+- used by the function above to get a local (linear) slope around a point
+
+```{r}
+nderiv <- function(fit, x, eps=1e-5){
+  (predict(fit, x + eps) - predict(fit, x - eps))/(2 * eps)}
+
+```
+
+---
+title: "MA Fitness"
+author: "Rutuja Gupte"
+---
+
+Import Statements
+```{r}
+library(dplyr)
+library(stringr)
+library(tidyverse)
+library(lme4)
+```
+
+> Setting up functions to extract information from the original data.
+
+- this fits a spline to y=OD versus x=time, and then finds the time-stamp for maximum slope
+```{r}
+spline.time<-function(x, y, n=101, eps=1e-5, span=0.2){
+  which.max(nderiv(loess(log(y) ~ x, degree=1, span=span), seq(min(x), max(x), length=n)))
+}
+```
+
+- this fits a linear regression model and extracts the slope
+```{r}
+well.lm.slope <- function(x, y){
+  lm(y ~ x)$coefficients[2]
+}
+```
+
+Load all files and setup variables
+```{r}
+l <- list.files()
+
+# read all data into a list of data frames
+dfs <- lapply(l[endsWith(l, '.csv')], function(r){
+  d <- read.csv(r)
+  
+  assay.name <- str_replace(str_replace(r, 'Ref', 'Rutuja'), '.csv', '.txt')
+  assay.data <- read.delim(assay.name)
+  # Change time column to 0, 0.25, 0.5, ...
+  assay.data$Time<-seq(from=0.25,by=0.25,length.out=nrow(assay.data))
+  # calculate slopes
+  d$slope <- sapply(c(1:nrow(d)), function(r){
+    spline.slope(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
+  })
+  
+  d$initial <- sapply(c(1:nrow(d)), function(r){
+    mean(assay.data[,which(names(assay.data)==d$well[r])][1:4])
+  })
+  
+  d$final <- sapply(c(1:nrow(d)), function(r){
+    temp <- assay.data[,which(names(assay.data)==d$well[r])]
+    temp <- temp[!is.na(temp)]
+     n <- length(temp)
+    mean(assay.data[,which(names(assay.data)==d$well[r])][n-3:n])
+  })
+
+  
+  # calculate time stamps for max slope
+  d$time <- sapply(c(1:nrow(d)), function(r){
+    spline.time(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
+  })
+  
+  #calculate slope of linear model
+  d$lm.slope <- sapply(c(1:nrow(d)), function(r){
+    well.lm.slope(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
+  })
+  
+  d$time <- assay.data$Time[d$time]
+  
+  d$date <- mdy(str_replace(str_replace(r, 'Ref ', ''), '.csv', ' 2023'))
+  return(d)
+})
+
+# merge the list of data frames
+d <- dfs %>% reduce(bind_rows)
+
+d <- d %>% 
+  filter(!(date %in% seq(mdy(04062023), mdy(04102023), 1)))
+
+ancestors <- c('H1', 'H2', 'H3', 'D1', 'D2', 'D3')
+# these are all the haploid ancestors including the diploids that are supposed to be diploids
+ancestors.haploid <- c('H1', 'H2', 'H3', 'D2', 'D3')
+# these are haploids that were intended to be haploids
+anc.hap.og <- c('H1', 'H2', 'H3')
+# these are haploids that were intended to be diploids
+anc.hap.fake <- c('D2', 'D3')
+# this is the only actual diploid control that was diploid
+ancestors.diploid <- c('D1')
+# this MA line started out as a haploid but ended up as a diploid
+fake.haploids <- c(81)
+# these MA lines started out as diploids but ended up as haploids
+fake.diploids <- c(20, 28, 48, 52, 54, 84, 100)
+```
+
+Adding additional information for categorization. Exluding MA lines that changed ploidy. 
+```{r}
+d <- d %>% mutate(label = recode(treatment,
+                                 'Blank' = '0',
+                                 'H1' = '101',
+                                 'D1' = '102',
+                                 'H2' = '103',
+                                 'D2' = '104',
+                                 'H3' = '105',
+                                 'D3' = '106'))
+d$label <- as.numeric(d$label)
+
+d <- d %>% mutate(category = case_when(label == 0 ~ 'Blank',
+                              label > 100 & treatment %in% ancestors.haploid ~ 'Ctrl.H',
+                              label > 100 & treatment %in% ancestors.diploid ~ 'Ctrl.D',
+                              label %% 2 == 0 ~ 'MA.D',
+                              label %% 2 == 1 ~ 'MA.H'))
+
+# exclude the haploid and diploid MA lines that switched ploidy for now
+d <- d %>% filter(!(label %in% fake.diploids)) %>%
+  filter(!(label %in% fake.haploids))
+
+```
+
+
+> Outlier removal
+
+Make predictions for the blanks. For that, remove the blank outliers that seem to be contaminated.
+```{r}
+blanks <-  d %>% filter(category == 'Blank')
+blanks %>% ggplot() + geom_point(aes(x=slope, y=1)) +
+  scale_x_log10()
+
+# setting cutoff for blanks around 
+good.blanks <- blanks %>% filter(slope < 0.05)
+bad.blanks <- blanks %>% filter(slope > 0.05)
+
+model <- lmer(slope~(1|date), data = good.blanks)
+dates.predict <- data.frame(date=distinct(d, date))
+# dates.predict$batch <- c(rep(1,4), rep(2,4))
+dates.predict$null = predict(model, dates.predict)
+```
+
+Remove outlier using rules:
+1. Remove any slopes less than the predicted blank slopes.
+```{r}
+df <- anti_join(d, bad.blanks)
+df <- full_join(df, dates.predict, by=join_by(date))
+df <- df %>% filter(slope >= null)
+```
+
+2. Remove any where slopes predicted by linear model were negative.
+```{r}
+df <- df %>%
+  filter(lm.slope >= 0)
+```
+
+3. Remove any curves where final OD was less than initial OD.
+```{r}
+df$delta <- df$final - df$initial
+df <- df %>% filter(delta >= 0)
+```
+
+4. Remove any curves where the maximum slope was attained in the first hour
+```{r}
+df <- df %>% filter(time > 1)
+```
+
+> Data Analysis
+
+```{r}
+data <- df %>% select(date, well, treatment, label, category, slope) %>%
+  filter(category != 'Blank') %>%
+  filter(!(treatment %in% anc.hap.fake))
+data$ploidy <- case_when(
+  data$category %in% c('Ctrl.H', 'MA.H') ~ 'Haploid',
+  data$category %in% c('Ctrl.D', 'MA.D') ~ 'Diploid'
+)
+data$MA <- case_when(
+  data$category %in% c('MA.H', 'MA.D') ~ 'MA',
+  data$category %in% c('Ctrl.H', 'Ctrl.D') ~ 'Ctrl',
+  data$category == 'Blank' ~ 'Blank'
+)
+ctrl <- data %>% filter(label > 100)
+trt <- data %>% filter(label > 0 & label <= 100)
+```
+
+Calculating the fitness of ancestors for each day
+```{r}
+mod <- lmer(slope ~ ploidy + (1|date), ctrl)
+ctrl.predict <- data.frame(distinct(ctrl, date, ploidy))
+ctrl.predict$ctrl <- predict(mod, ctrl.predict)
+```
+
+Calculating relative fitness
+```{r}
+trt <- left_join(trt, ctrl.predict, by=c('date', 'ploidy'))
+trt$rel.fit <- trt$slope - trt$ctrl
+
+trt <- trt %>% group_by(ploidy, label) %>%
+  summarize(rel.fit = mean(rel.fit)) %>%
+  ungroup()
+```
+
+Computing summary statistics
+```{r}
+mu.dip <- mean(trt$rel.fit[trt$ploidy == 'Diploid'])
+mu.dip
+sd.dip <- sd(trt$rel.fit[trt$ploidy == 'Diploid'])
+sd.dip
+
+mu.hap <- mean(trt$rel.fit[trt$ploidy == 'Haploid'])
+mu.hap
+sd.hap <- sd(trt$rel.fit[trt$ploidy == 'Haploid'])
+sd.hap
+```
+
+t tests
+```{r}
+t.test(trt$rel.fit[trt$ploidy == 'Diploid'])
+t.test(trt$rel.fit[trt$ploidy == 'Haploid'])
+
+t.test(trt$rel.fit[trt$ploidy == 'Diploid'], 
+       trt$rel.fit[trt$ploidy == 'Haploid'],
+       var.equal = FALSE)
+```
+
+Plotting relative fitness
+```{r}
+trt %>% ggplot() +
+  geom_histogram(aes(x=rel.fit), fill='black') +
+  facet_grid(rows = vars(ploidy)) +
+  geom_vline(data = data.frame(ploidy = c('Haploid', 'Diploid'),
+                               mu = c(mu.hap, mu.dip)),
+             aes(xintercept = mu, color = ploidy)) +
+  geom_vline(xintercept = 0, color = 'black') +
+  xlab("Relative Fitness") +
+  ylab("Number of Lines") +
+  guides(color = guide_legend(title = "Ploidy"))
+```
+
+Using lmer for hypothesis testing
+```{r}
+null <- lmer(slope ~ MA + ploidy + (1|date) + (1|treatment), data)
+summary(null)
+full <- lmer(slope ~ MA*ploidy + (1|date) + (1|treatment), data)
+summary(full)
+
+mod <- anova(null, full)
+mod
+```
+
+
+```{r}
+write.csv(d, "data_ip_draft1.csv")
+```
+
+
+

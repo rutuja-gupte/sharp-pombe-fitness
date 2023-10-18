@@ -348,6 +348,117 @@ df %>% filter(delta < 0) %>%
   as.vector()
 ```
 
+Outlier Analysis
+```{r}
+data <- d %>% 
+  filter(initial <= final) %>% 
+  anti_join(bad.blanks) %>%
+  full_join(dates.predict2, by=join_by(date)) %>%
+  filter(slope >= null) %>%
+  filter(!(treatment %in% anc.hap.fake))
+
+
+diff <- anti_join(d, data)
+diff %>% filter(date == ymd(20230503)) %>% select(well) %>% as.vector()
+diff %>% filter(date == ymd(20230505)) %>% select(well) %>% as.vector()
+diff %>% filter(date == ymd(20230428)) %>% select(well) %>% as.vector()
+diff %>% filter(date == ymd(20230430)) %>% select(well) %>% as.vector()
+```
+
+
+Data Analysis
+```{r}
+data <- data %>% select(date, well, treatment, label, category, slope) %>%
+  filter(category != 'Blank')
+data$ploidy <- case_when(
+  data$category %in% c('Ctrl.H', 'MA.H') ~ 'Haploid',
+  data$category %in% c('Ctrl.D', 'MA.D') ~ 'Diploid'
+)
+data$MA <- case_when(
+  data$category %in% c('MA.H', 'MA.D') ~ 'MA',
+  data$category %in% c('Ctrl.H', 'Ctrl.D') ~ 'Ctrl',
+)
+
+```
+
+Relative fitness calculations
+```{r}
+trt <- data %>% filter(label > 0 & label <= 100)
+ctrl <- data %>% filter(label > 100)
+
+mod <- lmer(slope ~ ploidy + (1|date), ctrl)
+ctrl.predict <- data.frame(distinct(ctrl, date, ploidy))
+ctrl.predict$ctrl <- predict(mod, ctrl.predict)
+trt <- left_join(trt, ctrl.predict, by=c('date', 'ploidy'))
+trt$rel.fit <- trt$slope - trt$ctrl
+
+trt <- trt %>% group_by(ploidy, label) %>%
+  summarize(rel.fit = mean(rel.fit)) %>%
+  ungroup()
+
+mu.dip <- mean(trt$rel.fit[trt$ploidy == 'Diploid'])
+sd.dip <- sd(trt$rel.fit[trt$ploidy == 'Diploid'])
+
+mu.hap <- mean(trt$rel.fit[trt$ploidy == 'Haploid'])
+sd.hap <- sd(trt$rel.fit[trt$ploidy == 'Haploid'])
+
+
+trt %>% ggplot() +
+  geom_histogram(aes(x=rel.fit), fill='black') +
+  facet_grid(rows = vars(ploidy)) +
+  geom_vline(data = data.frame(ploidy = c('Haploid', 'Diploid'),
+                               mu = c(mu.hap, mu.dip)),
+             aes(xintercept = mu, color = ploidy)) +
+  geom_vline(xintercept = 0, color = 'black') +
+  xlab("Relative Fitness") +
+  ylab("Number of Lines") +
+  guides(color = guide_legend(title = "Ploidy"))
+```
+
+lmer for hypothesis testing
+```{r}
+null <- lmer(slope ~ MA + ploidy + (1|date) + (1|treatment), data)
+summary(null)
+full <- lmer(slope ~ MA*ploidy + (1|date) + (1|treatment), data)
+summary(full)
+
+mod <- anova(null, full)
+mod
+
+
+full <- lmer(slope ~ MA + (1|date) + (1|treatment), data)
+null <- lmer(slope ~ 1 + (1|date) + (1|treatment), data)
+mod <- anova(null, full)
+mod
+
+full <- lmer(slope ~ ploidy + (1|date) + (1|treatment), data)
+null <- lmer(slope ~ 1 + (1|date) + (1|treatment), data)
+mod <- anova(null, full)
+mod
+
+
+full <- lmer(slope ~ ploidy + (1|date) + (1|treatment), data[data$MA == 'MA',])
+summary(full)
+null <- lmer(slope ~ 1 + (1|date) + (1|treatment), data[data$MA == 'MA',])
+mod <- anova(null, full)
+mod
+
+
+full <- lmer(slope ~ ploidy + (1|date) + (1|treatment), data[data$MA == 'Ctrl',])
+summary(full)
+null <- lmer(slope ~ 1 + (1|date) + (1|treatment), data[data$MA == 'Ctrl',])
+mod <- anova(null, full)
+mod
+```
+
+More exploration
+
+Checking consistency of lines
+```{r}
+data %>% ggplot() + geom_point(aes(x=treatment, y=slope, color=treatment))
+
+
+```
 
 
 
