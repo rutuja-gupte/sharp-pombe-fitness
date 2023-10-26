@@ -164,7 +164,7 @@ d <- d %>% filter(batch == 2)
 ```
 
 
-Use dates before taking averaging to check for day effects
+Use dates before taking average to check for day effects
 ```{r}
 # d %>% ggplot() + geom_point(aes(x=as.character(date), y=slope, color=category))
 
@@ -179,28 +179,11 @@ mean(d$slope)
 median(d$slope)
 min(d$slope)
 max(d$slope)
-
-# d %>% filter(slope < 0.025) %>%
-#   count(date)
-# 
-# d %>% filter(slope < 0.005) %>% count(treatment)
-# 
-# d %>% filter(slope < 0.005) %>%
-#   ggplot() + geom_point(aes(x=slope, y=1))
-# 
-# mean(d$slope < 0.025 & d$treatment != 'Blank')
-# quantile(d$slope, 0.06119792)
-# 
-# 
-# d %>% filter(slope < 0.010) %>%
-#   filter(date == dmy(06042023)) %>% ggplot() +
-#   geom_point(aes(x=slope, y=1))
-
 ```
 
 Trial plot after removing outliers
 ```{r}
-d %>% filter(slope > 0.010) %>% ggplot() + geom_point(aes(x=category, y=slope, color=category)) + facet_wrap(vars(date))
+# d %>% filter(slope > 0.010) %>% ggplot() + geom_point(aes(x=category, y=slope, color=category)) + facet_wrap(vars(date))
 ```
 
 Trying a linear model to set a cutoff for the blanks which can then be used to remove the other outliers
@@ -221,70 +204,70 @@ dates.predict$null = predict(model, dates.predict)
 
 Trial plot to see whether this will work
 ```{r}
-ggplot() + geom_point(data=d, aes(x=category, y=slope, color=category)) + 
-   facet_wrap(vars(date)) +
-  geom_hline(yintercept=dates.predict$null) + facet_wrap(vars(dates.predict$date))
+# ggplot() + geom_point(data=d, aes(x=category, y=slope, color=category)) + 
+#    facet_wrap(vars(date)) +
+#   geom_hline(yintercept=dates.predict$null) + facet_wrap(vars(dates.predict$date))
 ```
 
 Remove the outlier blanks and the other blanks from the actual data
 ```{r}
-df <- anti_join(d, bad.blanks)
-df <- full_join(df, dates.predict, by=join_by(date))
-df <- df %>% filter(slope >= null)
+# df <- anti_join(d, bad.blanks)
+# df <- full_join(df, dates.predict, by=join_by(date))
+# df <- df %>% filter(slope >= null)
 ```
 
 Plot the data yet again
 ```{r}
-df %>% ggplot() + geom_point(aes(x=category, y=slope, color=category)) + facet_wrap(vars(date))
+# df %>% ggplot() + geom_point(aes(x=category, y=slope, color=category)) + facet_wrap(vars(date))
 ```
 
 Trying new approach for removing outliers. Instead of using the lmer, compare with the max values for the blanks for each date
 
 Compute maximum values for the blanks for each date
 ```{r}
-dates.predict2 <- good.blanks %>% select(date, slope) %>% group_by(date) %>% summarize(null = max(slope))
+# dates.predict2 <- good.blanks %>% select(date, slope) %>% group_by(date) %>% summarize(null = max(slope))
 ```
 
 Remove the outlier blanks and the other blanks from the actual data
 ```{r}
-df2 <- anti_join(d, bad.blanks)
-df2 <- full_join(df2, dates.predict2, by=join_by(date))
-df2 <- df2 %>% filter(slope >= null)
+# df2 <- anti_join(d, bad.blanks)
+# df2 <- full_join(df2, dates.predict2, by=join_by(date))
+# df2 <- df2 %>% filter(slope >= null)
 ```
 
 Plot the date yet again
 ```{r}
-df2 %>% ggplot() + geom_point(aes(x=category, y=slope, color=category)) + facet_wrap(vars(date))
+# df2 %>% ggplot() + geom_point(aes(x=category, y=slope, color=category)) + facet_wrap(vars(date))
 ```
 
 Finding the difference between the two outlier methods
 ```{r}
-diff <- anti_join(df, df2, by=join_by(well, date))
-diff %>% select(well, date) %>% count(date)
-
-diff %>% filter(date == dmy(28042023)) %>% select(well)
-diff %>% filter(date == dmy(30042023)) %>% select(well)
+# diff <- anti_join(df, df2, by=join_by(well, date))
+# diff %>% select(well, date) %>% count(date)
+# 
+# diff %>% filter(date == dmy(28042023)) %>% select(well)
+# diff %>% filter(date == dmy(30042023)) %>% select(well)
 ```
 
 > Important Note: The 15 curves that are different between the two approaches are all bad curves (based on their plots). I would prefer to exclude those.
 
 Sampling few low curves from df2 to see their shape. Shape plotting in plotting python notebook.
 ```{r}
-df2 %>%
-  filter(date == dmy(03052023)) %>% 
-  slice_min(order_by = slope, n=8) %>% select(well)
-
-df2 %>% 
-  filter(date == dmy(05052023)) %>%
-  slice_min(order_by = slope, n=8) %>% select(well)
-
-df2 %>% 
-  filter(date == dmy(28042023)) %>%
-  slice_min(order_by = slope, n=8) %>% select(well)
-
-df2 %>% 
-  filter(date == dmy(30042023)) %>%
-  slice_min(order_by = slope, n=8) %>% select(well)
+# df2 %>%
+#   filter(date == dmy(03052023)) %>% 
+#   slice_min(order_by = slope, n=8) %>% select(well)
+# 
+# df2 %>% 
+#   filter(date == dmy(05052023)) %>%
+#   slice_min(order_by = slope, n=8) %>% select(well)
+# 
+# df2 %>% 
+#   filter(date == dmy(28042023)) %>%
+#   slice_min(order_by = slope, n=8) %>% select(well)
+# 
+# df2 %>% 
+#   filter(date == dmy(30042023)) %>%
+#   slice_min(order_by = slope, n=8) %>% select(well)
 ```
 
 > More filtering required on the data...
@@ -292,60 +275,60 @@ df2 %>%
 
 Filtering based on slope of linear model
 ```{r}
-df <- df %>% filter(lm.slope >= 0)
-df2 <- df2 %>% filter(lm.slope >= 0)
+# df <- df %>% filter(lm.slope >= 0)
+# df2 <- df2 %>% filter(lm.slope >= 0)
 ```
 
 ```{r}
-diff <- anti_join(d, df, by=join_by(well, date))
-diff %>% select(well, date) %>% count(date)
-diff %>% filter(date == ymd(20230503)) %>% 
-  select(well) %>% as.vector %>% print()
+# diff <- anti_join(d, df, by=join_by(well, date))
+# diff %>% select(well, date) %>% count(date)
+# diff %>% filter(date == ymd(20230503)) %>% 
+#   select(well) %>% as.vector %>% print()
 
-
-diff <- anti_join(d, df2, by=join_by(well, date))
-diff %>% select(well, date) %>% count(date)
-diff %>% filter(date == ymd(20230503)) %>% 
-  select(well) %>% as.vector %>% print()
+# 
+# diff <- anti_join(d, df2, by=join_by(well, date))
+# diff %>% select(well, date) %>% count(date)
+# diff %>% filter(date == ymd(20230503)) %>% 
+#   select(well) %>% as.vector %>% print()
 ```
 
 Plotting even more
 
 Plotting the time stamp for max slope
 ```{r}
-df %>% ggplot() + geom_point(aes(x=category, y=time, color=category)) + facet_wrap(vars(date))
+# df %>% ggplot() + geom_point(aes(x=category, y=time, color=category)) + facet_wrap(vars(date))
 ```
 
 ```{r}
-df %>% filter(!(category == 'Blank')) %>% filter(time<10) %>% ggplot() + geom_histogram(aes(x=time), fill='black')
-
-df %>% filter(time<1) %>% 
-  filter(date == ymd(20230503)) %>% select(well) %>%
-  as.vector()
+# df %>% filter(!(category == 'Blank')) %>% filter(time<10) %>% ggplot() + geom_histogram(aes(x=time), fill='black')
+# 
+# df %>% filter(time<1) %>% 
+#   filter(date == ymd(20230503)) %>% select(well) %>%
+#   as.vector()
 ```
 
 Plotting to explore the linear models
 ```{r}
-df2 %>% filter(!(category == 'Blank')) %>% ggplot() + geom_histogram(aes(x=lm.slope), fill='black')
-
-df2 %>% filter(!(category == 'Blank')) %>% ggplot() + geom_histogram(aes(x=sse), fill='black')
+# df2 %>% filter(!(category == 'Blank')) %>% ggplot() + geom_histogram(aes(x=lm.slope), fill='black')
+# 
+# df2 %>% filter(!(category == 'Blank')) %>% ggplot() + geom_histogram(aes(x=sse), fill='black')
 ```
 
 Plotting for more factors
 ```{r}
-df$delta = df$final - df$initial
-df %>%
-  ggplot() + 
-  geom_histogram(aes(x=initial), fill = "red", alpha = 0.5) +
-  geom_vline(xintercept = mean(good.blanks$initial))
-  # geom_histogram(aes(x=final), fill = "blue", alpha = 0.5) + 
-  # geom_histogram(aes(x=delta), fill = "green", alpha = 0.5) 
-
-
-#if the OD decreases at the end, remove the replicates
-df %>% filter(delta < 0) %>% 
-  filter(date == ymd(20230503)) %>% select(well) %>%
-  as.vector()
+# df$delta = df$final - df$initial
+# df %>%
+#   ggplot() + 
+#   geom_histogram(aes(x=initial), fill = "red", alpha = 0.5) +
+#   geom_vline(xintercept = mean(good.blanks$initial))
+#   # geom_histogram(aes(x=final), fill = "blue", alpha = 0.5) + 
+#   # geom_histogram(aes(x=delta), fill = "green", alpha = 0.5) 
+# 
+# 
+# #if the OD decreases at the end, remove the replicates
+# df %>% filter(delta < 0) %>% 
+#   filter(date == ymd(20230503)) %>% select(well) %>%
+#   as.vector()
 ```
 
 Outlier Analysis
@@ -353,7 +336,7 @@ Outlier Analysis
 data <- d %>% 
   filter(initial <= final) %>% 
   anti_join(bad.blanks) %>%
-  full_join(dates.predict2, by=join_by(date)) %>%
+  full_join(dates.predict, by=join_by(date)) %>%
   filter(slope >= null) %>%
   filter(!(treatment %in% anc.hap.fake))
 
@@ -415,6 +398,13 @@ trt %>% ggplot() +
   guides(color = guide_legend(title = "Ploidy"))
 ```
 
+Using lmer for predicting growth rates
+```{r}
+full <- lmer(slope ~ MA*ploidy + (1|date) + (1|treatment), data)
+```
+
+
+
 lmer for hypothesis testing
 ```{r}
 null <- lmer(slope ~ MA + ploidy + (1|date) + (1|treatment), data)
@@ -456,9 +446,56 @@ More exploration
 Checking consistency of lines
 ```{r}
 data %>% ggplot() + geom_point(aes(x=treatment, y=slope, color=treatment))
-
-
 ```
+
+Summarize all collected data for all lines and calculate parameters
+```{r}
+df <- data %>% 
+  group_by(treatment, ploidy, MA) %>%
+  summarize(avg = mean(slope),
+            var = var(slope),
+            sd = sd(slope),
+            min = min(slope),
+            min.date = data$date[data$slope == min(data$slope)],
+            max = max(slope),
+            max.date = data$date[data$slope == max(data$slope)]) %>%
+  ungroup()
+```
+
+Trying some exploratory plots for variance
+```{r}
+df %>% ggplot() + geom_histogram(aes(x=var), fill = 'black')
+df %>% filter(var > 0.0025)
+df %>% ggplot() + geom_histogram(aes(x=sd), fill = 'black')
+
+df %>% ggplot() + geom_histogram(aes(x=avg), fill = 'black') +
+  geom_vline(xintercept = df$avg[df$ploidy == 'Haploid' &
+                               df$MA == 'Ctrl'], color='Red') +
+  geom_vline(xintercept = df$avg[df$ploidy == 'Diploid' &
+                               df$MA == 'Ctrl'], color='Blue')
+df %>% filter(avg > 0.2)
+```
+
+Trying lmer models with variance and sd
+```{r}
+mod <- lm(var ~ ploidy*MA, df)
+summary(mod)
+
+mod <- lm(var ~ ploidy, df[df$MA == 'Ctrl',])
+summary(mod)
+
+mod <- lm(var ~ ploidy, df[df$MA == 'MA',])
+summary(mod)
+
+mod <- lm(var ~ MA, df[df$ploidy == 'Haploid',])
+summary(mod)
+
+mod <- lm(var ~ MA, df[df$ploidy == 'Diploid',])
+summary(mod)
+```
+
+
+
 
 
 
