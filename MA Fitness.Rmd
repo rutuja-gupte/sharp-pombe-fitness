@@ -43,6 +43,7 @@ library(stringr)
 library(tidyverse)
 library(lme4)
 # lib vioplot for violin plot
+library(vioplot)
 ```
 
 - this fits a spline to y=OD versus x=time, and then finds the time-stamp for maximum slope
@@ -71,7 +72,7 @@ Load all files and setup variables
 l <- list.files()
 
 # read all data into a list of data frames
-dfs <- lapply(l[endsWith(l, '.csv')], function(r){
+dfs <- lapply(l[endsWith(l, '.csv') & startsWith(l, 'Ref ')], function(r){
   d <- read.csv(r)
   
   assay.name <- str_replace(str_replace(r, 'Ref', 'Rutuja'), '.csv', '.txt')
@@ -154,6 +155,8 @@ d <- d %>% mutate(category = case_when(label == 0 ~ 'Blank',
                               label %% 2 == 0 ~ 'MA.D',
                               label %% 2 == 1 ~ 'MA.H'))
 
+
+d2 <- d
 # exclude the haploid and diploid MA lines that switched ploidy for now
 d <- d %>% filter(!(label %in% fake.diploids)) %>%
   filter(!(label %in% fake.haploids))
@@ -398,11 +401,14 @@ trt %>% ggplot() +
   guides(color = guide_legend(title = "Ploidy"))
 ```
 
-Using lmer for predicting growth rates
-```{r}
-full <- lmer(slope ~ MA*ploidy + (1|date) + (1|treatment), data)
-```
 
+```{r}
+vioplot(trt[trt$ploidy == 'Haploid',]$rel.fit,
+        trt[trt$ploidy == 'Diploid',]$rel.fit,
+        names = c("Haploid", "Diploid"),
+        col = c('red', 'blue'),
+        ylim = c(-0.15, 0))
+```
 
 
 lmer for hypothesis testing
@@ -426,7 +432,20 @@ null <- lmer(slope ~ 1 + (1|date) + (1|treatment), data)
 mod <- anova(null, full)
 mod
 
+#2023 10 30
+full <- lmer(slope ~ MA + ploidy + (1|date) + (1|treatment), data)
+null <- lmer(slope ~ MA + (1|date) + (1|treatment), data)
+mod <- anova(null, full)
+mod
 
+full <- lmer(slope ~ ploidy + MA + (1|date) + (1|treatment), data)
+null <- lmer(slope ~ ploidy + (1|date) + (1|treatment), data)
+mod <- anova(null, full)
+mod
+
+
+
+#old
 full <- lmer(slope ~ ploidy + (1|date) + (1|treatment), data[data$MA == 'MA',])
 summary(full)
 null <- lmer(slope ~ 1 + (1|date) + (1|treatment), data[data$MA == 'MA',])
@@ -434,6 +453,33 @@ mod <- anova(null, full)
 mod
 
 
+#2023 10 26
+full <- lmer(slope ~ ploidy + (1|date) + (1|treatment), data[data$MA == 'MA',])
+summary(full)
+null <- lmer(slope ~ ploidy + (1|date), data[data$MA == 'MA',])
+mod <- anova(null, full)
+mod
+
+
+full.hap <- lmer(slope ~ 1 + (1|date) + (1|treatment), data[data$MA == 'MA' & data$ploidy =='Haploid',])
+null.hap <- lmer(slope ~ 1 + (1|date), data[data$MA == 'MA' & data$ploidy =='Haploid',])
+anova(full.hap, null.hap)
+
+full.hap <- lmer(slope ~ 1 + (1|date) + (1|treatment), data[data$MA == 'Ctrl' & data$ploidy =='Haploid',])
+null.hap <- lmer(slope ~ 1 + (1|date), data[data$MA == 'Ctrl' & data$ploidy =='Haploid',])
+anova(full.hap, null.hap)
+
+
+
+full.dip <- lmer(slope ~ 1 + (1|date) + (1|treatment), data[data$MA == 'MA' & data$ploidy =='Diploid',])
+confint(full.hap)
+confint(full.dip)
+confint.merMod(full.hap) # or just use confint
+confint.merMod(full.dip)
+mod
+
+
+#old
 full <- lmer(slope ~ ploidy + (1|date) + (1|treatment), data[data$MA == 'Ctrl',])
 summary(full)
 null <- lmer(slope ~ 1 + (1|date) + (1|treatment), data[data$MA == 'Ctrl',])
@@ -474,6 +520,12 @@ df %>% ggplot() + geom_histogram(aes(x=avg), fill = 'black') +
   geom_vline(xintercept = df$avg[df$ploidy == 'Diploid' &
                                df$MA == 'Ctrl'], color='Blue')
 df %>% filter(avg > 0.2)
+
+df %>% ggplot() + geom_histogram(aes(x=var), fill = 'black') +
+  geom_vline(xintercept = df$var[df$ploidy == 'Haploid' &
+                               df$MA == 'Ctrl'], color='Red') +
+  geom_vline(xintercept = df$var[df$ploidy == 'Diploid' &
+                               df$MA == 'Ctrl'], color='Blue')
 ```
 
 Trying lmer models with variance and sd
@@ -494,10 +546,304 @@ mod <- lm(var ~ MA, df[df$ploidy == 'Diploid',])
 summary(mod)
 ```
 
+```{r}
+trt <- data %>% filter(label > 0 & label <= 100)
+ctrl <- data %>% filter(label > 100)
+
+mod <- lmer(slope ~ ploidy + (1|date), ctrl)
+ctrl.predict <- data.frame(distinct(ctrl, date, ploidy))
+ctrl.predict$ctrl <- predict(mod, ctrl.predict)
+trt <- left_join(trt, ctrl.predict, by=c('date', 'ploidy'))
+trt$rel.fit <- trt$slope - trt$ctrl
+
+```
+
+Data Cleanup for d2 (does not exclude ploidy changes)
+
+```{r}
+d2 <- d2 %>% mutate(category = ifelse(label %in% fake.diploids, 'MA.H', category))
+d2 <- d2 %>% mutate(category = ifelse(label %in% fake.haploids, 'MA.D', category))
+d2 <- d2 %>% filter(batch == 2)
+data2 <- d2 %>% 
+  filter(initial <= final) %>% 
+  anti_join(bad.blanks) %>%
+  full_join(dates.predict, by=join_by(date)) %>%
+  filter(slope >= null) %>%
+  filter(!(treatment %in% anc.hap.fake))
+
+data2 <- data2 %>% select(date, well, treatment, label, category, slope, initial) %>%
+  filter(category != 'Blank')
+data2$ploidy <- case_when(
+  data2$category %in% c('Ctrl.H', 'MA.H') ~ 'Haploid',
+  data2$category %in% c('Ctrl.D', 'MA.D') ~ 'Diploid'
+)
+data2$MA <- case_when(
+  data2$category %in% c('MA.H', 'MA.D') ~ 'MA',
+  data2$category %in% c('Ctrl.H', 'Ctrl.D') ~ 'Ctrl',
+)
+
+trt2 <- data2 %>% filter(label > 0 & label <= 100)
+ctrl2 <- data2 %>% filter(label > 100)
+
+mod2 <- lmer(slope ~ ploidy + (1|date), ctrl2)
+ctrl.predict2 <- data.frame(distinct(ctrl, date, ploidy))
+ctrl.predict2$ctrl <- predict(mod2, ctrl.predict2)
+trt2 <- left_join(trt2, ctrl.predict2, by=c('date', 'ploidy'))
+trt2$rel.fit <- trt2$slope - trt2$ctrl
+trt2 <- trt2 %>% group_by(ploidy, label) %>%
+  summarize(rel.fit = mean(rel.fit)) %>%
+  ungroup()
+```
+
+
+Read the mutation data and work with that
+```{r}
+mut <- read_delim("pombe_MA_data.txt")
+trt2 <- trt2 %>%
+  left_join(mut, by=c('label'='line'))
+trt2 <- trt2 %>% select(ploidy.x, label, rel.fit, ploidy.y, ploidy_final,
+                        n.SNM, n.indel)
+trt2 <- trt2 %>% mutate(mutations = n.SNM + n.indel)
+
+trt2 %>% ggplot() +
+  geom_point(aes(x=mutations , y=rel.fit, color=ploidy.x)) +
+  geom_smooth(data=trt2[trt2$ploidy.x == 'Haploid',],
+              mapping=aes(x=mutations, y=rel.fit), color='Blue', method="lm", se=FALSE) +
+  geom_smooth(data=trt2[trt2$ploidy.x == 'Diploid',],
+              mapping=aes(x=mutations, y=rel.fit), color='Red', method="lm", se=FALSE)
+
+trt2 %>% ggplot() +
+  geom_point(aes(x=n.SNM, y=rel.fit)) +
+  geom_smooth(aes(x=n.SNM, y=rel.fit), method = "lm", se=FALSE, color='blue')
+
+trt2 %>%
+  filter(ploidy.x == 'Haploid') %>% ggplot() +
+  geom_point(aes(x=n.SNM, y=rel.fit)) +
+  geom_smooth(aes(x=n.SNM, y=rel.fit), method = "lm", se=FALSE, color='blue')
+
+trt2 %>%
+  filter(ploidy.x == 'Diploid') %>% ggplot() +
+  geom_point(aes(x=n.SNM, y=rel.fit)) +
+  geom_smooth(aes(x=n.SNM, y=rel.fit), method = "lm", se=FALSE, color='blue')
+
+trt2 %>% ggplot() +
+  geom_point(aes(x=n.indel, y=rel.fit)) +
+  geom_smooth(aes(x=n.indel, y=rel.fit), method = "lm", se=FALSE, color='blue')
+
+trt2 %>%
+  filter(ploidy.x == 'Haploid') %>% ggplot() +
+  geom_point(aes(x=n.indel, y=rel.fit)) +
+  geom_smooth(aes(x=n.indel, y=rel.fit), method = "lm", se=FALSE, color='blue')
+
+trt2 %>%
+  filter(ploidy.x == 'Diploid') %>% ggplot() +
+  geom_point(aes(x=n.indel, y=rel.fit)) +
+  geom_smooth(aes(x=n.indel, y=rel.fit), method = "lm", se=FALSE, color='blue')
+
+```
+
+```{r}
+mod <- lm(trt2$rel.fit ~ trt2$n.SNM)
+summary(mod)
+
+mod <- lm(trt2$rel.fit ~ trt2$n.indel)
+summary(mod)
+
+mod.hap <- lm(rel.fit ~ mutations, trt2[trt2$ploidy.x=='Haploid',])
+summary(mod.hap)
+
+mod.dip <- lm(rel.fit ~ mutations, trt2[trt2$ploidy.x=='Diploid',])
+summary(mod.dip)
+```
 
 
 
+```{r}
+trt2 %>% ggplot() +
+  geom_histogram(aes(x=rel.fit), fill='black') +
+  facet_grid(rows = vars(ploidy.x)) +
+  geom_vline(data = data.frame(ploidy.x = c('Haploid', 'Diploid'),
+                               mu = c(mu.hap, mu.dip)),
+             aes(xintercept = mu, color = ploidy.x)) +
+  geom_vline(xintercept = 0, color = 'black') +
+  xlab("Relative Fitness") +
+  ylab("Number of Lines") +
+  guides(color = guide_legend(title = "Ploidy"))
+```
 
+lmer for hypothesis testing
+```{r}
+null <- lmer(slope ~ MA + ploidy + (1|date) + (1|treatment), data2)
+summary(null)
+full <- lmer(slope ~ MA*ploidy + (1|date) + (1|treatment), data2)
+summary(full)
+
+mod <- anova(null, full)
+mod
+
+
+full <- lmer(slope ~ ploidy + (1|date) + (1|treatment), data2[data2$MA == 'MA',])
+summary(full)
+null <- lmer(slope ~ 1 + (1|date) + (1|treatment), data2[data2$MA == 'MA',])
+mod <- anova(null, full)
+mod
+
+full <- lmer(slope ~ ploidy + (1|date) + (1|treatment), data2[data2$MA == 'Ctrl',])
+summary(full)
+null <- lmer(slope ~ 1 + (1|date) + (1|treatment), data2[data2$MA == 'Ctrl',])
+mod <- anova(null, full)
+mod
+```
+
+Trying more lmer
+```{r}
+full <- lmer(slope ~ initial + (1|ploidy) + (1|MA) + (1|treatment) + (1|date), data2)
+summary(full)
+null <- lmer(slope ~ 1 + (1|ploidy) + (1|MA) + (1|treatment) + (1|date), data2)
+anova(full, null)
+
+full <- lmer(slope ~ ploidy + (1|initial) + (1|MA) + (1|treatment) + (1|date), data2)
+summary(full)
+null <- lmer(slope ~ 1 + (1|initial) + (1|MA) + (1|treatment) + (1|date), data2)
+anova(full, null)
+
+full <- lmer(slope ~ MA + (1|ploidy) + (1|initial) + (1|treatment) + (1|date), data2)
+summary(full)
+null <- lmer(slope ~ 1 + (1|ploidy) + (1|initial) + (1|treatment) + (1|date), data2)
+anova(full, null)
+
+# Date, fortunately does not have a significant effect
+full <- lmer(slope ~ date + (1|ploidy) + (1|initial) + (1|MA) + (1|treatment), data2)
+summary(full)
+null <- lmer(slope ~ 1 + (1|ploidy) + (1|initial) + (1|MA) + (1|treatment), data2)
+anova(full, null)
+
+full <- lmer(slope ~ ploidy * MA + initial + (1|treatment) + (1|date), data2)
+summary(full)
+null <- lmer(slope ~ ploidy + MA + initial + (1|treatment) + (1|date), data2)
+anova(full, null)
+
+
+```
+
+
+Plots for poster
+```{r}
+d2 %>% ggplot() +
+  geom_point(aes(x = category, y = slope)) +
+  xlab("Lines") +
+  ylab("Maximum Growth Rate") +
+  scale_x_discrete(labels = c("Ctrl.D" = "Dip-Ctrl",
+                   "Ctrl.H" = "Hap-Ctrl",
+                   "MA.D" = "Dip-MA",
+                   "MA.H" = "Hap-MA"))
+
+
+data2 %>% ggplot() +
+  geom_point(aes(x = category, y = slope)) + 
+  xlab("Lines") +
+  ylab("Maximum Growth Rate") + 
+  scale_x_discrete(labels = c("Ctrl.D" = "Dip-Ctrl",
+                   "Ctrl.H" = "Hap-Ctrl",
+                   "MA.D" = "Dip-MA",
+                   "MA.H" = "Hap-MA"))
+
+vioplot(trt2[trt2$ploidy.x == 'Haploid',]$rel.fit,
+        trt2[trt2$ploidy.x == 'Diploid',]$rel.fit,
+        names = c("Haploid", "Diploid"),
+        col = c('red', 'blue'),
+        ylim = c(-0.15, 0.01), 
+        ylab = "Relative Fitness",
+        xlab = "Ploidy")
+abline(h=0)
+
+mu.dip2 <- mean(trt2$rel.fit[trt2$ploidy.x == 'Diploid'])
+sd.dip2 <- sd(trt2$rel.fit[trt2$ploidy.x == 'Diploid'])
+
+mu.hap2 <- mean(trt2$rel.fit[trt2$ploidy.x == 'Haploid'])
+sd.hap2 <- sd(trt2$rel.fit[trt2$ploidy.x == 'Haploid'])
+
+trt2 %>% ggplot() +
+  geom_histogram(aes(x=rel.fit), fill='black') +
+  facet_grid(rows = vars(ploidy.x)) +
+  geom_vline(data = data.frame(ploidy.x = c('Haploid', 'Diploid'),
+                               mu = c(mu.hap2, mu.dip2)),
+             aes(xintercept = mu, color = ploidy.x), show.legend = FALSE) +
+  geom_vline(xintercept = 0, color = 'black') +
+  xlab("Relative Fitness") +
+  ylab("Number of Lines") 
+  # guides(color = guide_legend(title = "Mean Relative Fitness"))
+
+trt2 %>% ggplot() +
+  geom_point(aes(x=mutations , y=rel.fit, color=ploidy.x)) +
+  geom_smooth(data=trt2[trt2$ploidy.x == 'Haploid',],
+              mapping=aes(x=mutations, y=rel.fit), color='Blue', method="lm", se=FALSE) +
+  geom_smooth(data=trt2[trt2$ploidy.x == 'Diploid',],
+              mapping=aes(x=mutations, y=rel.fit), color='Red', method="lm", se=FALSE) +
+  ylab("Relative Fitness") +
+  xlab("Number of Mutations (SNM + indel)") +
+  guides(color = guide_legend(title = "Ploidy"))
+
+```
+
+Growth rate curve
+```{r}
+p <- read.csv("Ref 05 03.csv")
+
+assay.name <- "Rutuja 05 03.txt"
+assay.data <- read.delim(assay.name)
+
+# spline.slope<-function(x, y, n=101, eps=1e-5, span=0.2){
+#   max(nderiv(loess(log(y) ~ x, degree=1, span=span), seq(min(x), max(x), length=n)), na.rm=TRUE)
+# }
+
+
+# Change time column to 0, 0.25, 0.5, ...
+assay.data$Time<-seq(from=0.25,by=0.25,length.out=nrow(assay.data))
+# calculate slopes
+p$slope <- sapply(c(1:nrow(p)), function(r){
+  # spline.slope(assay.data$Time, assay.data[,which(names(assay.data)==p$well[r])])
+  max(nderiv(loess(log(assay.data[,which(names(assay.data)==p$well[r])]) ~ assay.data$Time, degree=1, span=0.2), seq(min(assay.data$Time), max(assay.data$Time), length=101)), na.rm=TRUE)
+})
+
+
+fun <- function(r){
+  # spline.slope(assay.data$Time, assay.data[,which(names(assay.data)==p$well[r])])
+  (nderiv(loess(log(assay.data[,which(names(assay.data)==p$well[r])]) ~ assay.data$Time, degree=1, span=0.2), seq(min(assay.data$Time), max(assay.data$Time), length=101)))
+}
+
+
+p$time <- sapply(c(1:nrow(p)), function(r){
+    spline.time(assay.data$Time, assay.data[,which(names(assay.data)==p$well[r])])
+  })
+
+#nderiv(loess(assay.data$M15 ~ assay.data$Time, degree=1, span=0.2), assay.data$Time)
+#max(nderiv(loess(assay.data$M15 ~ assay.data$Time, degree=1, span=0.2), assay.data$Time), na.rm=TRUE)
+#which.max(nderiv(loess(assay.data$M15 ~ assay.data$Time, degree=1, span=0.2), assay.data$Time))
+#assay.data$M15[44]
+
+t <- data.frame(x = seq(10, 12, 0.25))
+slope = 0.05546986
+intercept = 0.442 - 0.05546986 * 11
+t <- t %>% mutate(y = slope * x + intercept)
+
+assay.data %>% ggplot() +
+  geom_line(aes(x=Time, y=M15)) +
+  scale_x_continuous(limits = c(0,24)) +
+  ylab("Optical Density") + 
+  geom_line(data = t, mapping=aes(x=x, y=y), color='Red')
+
+
+
+# assay.data %>% ggplot() +
+#   geom_line(aes(x=Time, y=M15)) +
+#   scale_x_continuous(limits = c(0,24)) +
+#   ylab("Optical Density") 
+  # geom_abline(slope = 0.1356135, 
+  #             intercept = 0.213 -
+  #               0.1356135 * 4.75)
+  # 
+```
 
 
 
