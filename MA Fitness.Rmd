@@ -277,11 +277,11 @@ trt %>% ggplot() +
 
 
 ```{r}
-vioplot(trt[trt$ploidy == 'Haploid',]$rel.fit,
-        trt[trt$ploidy == 'Diploid',]$rel.fit,
-        names = c("Haploid", "Diploid"),
-        col = c('red', 'blue'),
-        ylim = c(-0.15, 0))
+# vioplot(trt[trt$ploidy == 'Haploid',]$rel.fit,
+#         trt[trt$ploidy == 'Diploid',]$rel.fit,
+#         names = c("Haploid", "Diploid"),
+#         col = c('red', 'blue'),
+#         ylim = c(-0.15, 0))
 ```
 
 
