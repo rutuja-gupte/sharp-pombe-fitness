@@ -281,6 +281,16 @@ trt %>% ggplot() +
   guides(color = guide_legend(title = "Ploidy"))
 ```
 
+```{r}
+mod <- lm(rel.fit ~ mutations, trt)
+summary(mod)
+
+mod <- lm(rel.fit ~ mutations, trt[trt$ploidy == 'Haploid',])
+summary(mod)
+
+mod <- lm(rel.fit ~ mutations, trt[trt$ploidy == 'Diploid',])
+summary(mod)
+```
 
 
 To create the data appendix

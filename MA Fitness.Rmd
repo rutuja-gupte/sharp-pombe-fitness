@@ -715,7 +715,7 @@ assay.data %>% ggplot() +
   geom_line(aes(x=Time, y=M15)) +
   scale_x_continuous(limits = c(0,24)) +
   ylab("Optical Density") + 
-  geom_line(data = t, mapping=aes(x=x, y=y), color='Red')
+  geom_line(data = t, mapping=aes(x=x, y=y), color='Red', linewidth=1)
 
 
 
