@@ -46,12 +46,54 @@ library(lme4)
 library(vioplot)
 ```
 
+Preliminary work to find the time stamp for the max slope
+```{r}
+assay <- read.delim("Rutuja 05 05.txt")
+ref <- read.csv("Ref 05 05.csv")
+assay$Time<-seq(from=0.25,by=0.25,length.out=nrow(assay))
+  # calculate slopes
+ref$slope <- sapply(c(1:nrow(ref)), function(r){
+    spline.slope(assay$Time, assay[,which(names(assay)==ref$well[r])])
+  })
+
+y <- assay$J15
+x <- assay$Time
+
+# loess gives a smooth version of the curve
+ess <- loess(log(y) ~ x, degree=1, span=0.2)
+p <- predict(ess, x)
+
+ggplot() +
+  geom_point(aes(y=log(y), x=x)) +
+  geom_point(aes(y=p, x=x), color='red') +
+  geom_line(aes(y=p, x=x), color='blue')
+
+# calculating the slope of all points using their adjacent points
+slopes <- sapply(c(2:(nrow(assay)-1)), function(r){
+  (p[r+1]-p[r-1]) / (x[r+1]-x[r-1])
+})
+ggplot() + geom_point(aes(x=x[2:(length(x)-1)], y=slopes))
+
+# Using the values predicted by loess and nderiv to calculate the slope
+slopes2 <- nderiv(ess, x)
+ggplot() + geom_point(aes(x=x, y=slopes2), color='red') +
+  geom_point(aes(x=x[2:(length(x)-1)], y=slopes), alpha=0.3)
+
+max(slopes2, na.rm=TRUE)
+which.max(slopes2)
+slopes2[89]
+```
+
+> Spline fitting:
+
+First we start by converting everything to log scale. During the exponential growth phase, log(N) is proportional to t where N is the population and t is time. There is noise in the original data. We remove the noise and try to obtain the underlying curve using loess. It gives a smooth curve. Then we use that curve to find local slopes. nderiv gives precise slope of the local linear slope at every point.
+
 - this fits a spline to y=OD versus x=time, and then finds the time-stamp for maximum slope
 
 ## Needs updating
 ```{r}
 spline.time<-function(x, y, n=101, eps=1e-5, span=0.2){
-  which.max(nderiv(loess(log(y) ~ x, degree=1, span=span), seq(min(x), max(x), length=n)))
+  
 }
 ```
 
