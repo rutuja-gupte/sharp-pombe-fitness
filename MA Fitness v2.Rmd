@@ -1,0 +1,356 @@
+---
+title: "MA Fitness v2"
+author: "Rutuja"
+date: "2023-11-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setup functions
+
+---
+title: "MA Fitness"
+author: "Dr Nathaniel Sharp"
+---
+
+- this fits a spline to y=OD versus x=time, and then finds the maximum slope
+```{r}
+spline.slope<-function(x, y, n=101, eps=1e-5, span=0.2){
+  max(nderiv(loess(log(y) ~ x, degree=1, span=span), x), na.rm=TRUE)
+}
+```
+
+- used by the function above to get a local (linear) slope around a point
+
+```{r}
+nderiv <- function(fit, x, eps=1e-5){
+  (predict(fit, x + eps) - predict(fit, x - eps))/(2 * eps)}
+
+```
+
+---
+title: "MA Fitness"
+author: "Rutuja Gupte"
+---
+
+```{r, include=FALSE}
+library(dplyr)
+library(stringr)
+library(tidyverse)
+library(lme4)
+library(vioplot)
+```
+
+Preliminary work to find the time stamp for the max slope
+```{r}
+assay <- read.delim("Rutuja 05 05.txt")
+ref <- read.csv("Ref 05 05.csv")
+
+# Convert time to 0.25 increments
+assay$Time<-seq(from=0.25,by=0.25,length.out=nrow(assay))
+
+# calculate slopes
+ref$slope <- sapply(c(1:nrow(ref)), function(r){
+    spline.slope(assay$Time, assay[,which(names(assay)==ref$well[r])])
+  })
+
+y <- assay$J15
+x <- assay$Time
+
+# loess gives a smooth version of the curve
+ess <- loess(log(y) ~ x, degree=1, span=0.2)
+p <- predict(ess, x)
+
+ggplot() +
+  geom_point(aes(y=log(y), x=x)) +
+  geom_point(aes(y=p, x=x), color='red') +
+  geom_line(aes(y=p, x=x), color='blue')
+
+# Using the values predicted by loess and nderiv to calculate the slope
+slopes <- nderiv(ess, x)
+ggplot() + geom_point(aes(x=x, y=slopes), color='red', alpha=0.3)
+
+max(slopes, na.rm=TRUE)
+which.max(slopes)
+slopes[89]
+
+```
+
+### Spline fitting:
+
+First we start by converting everything to log scale. During the exponential growth phase, log(N) is proportional to t where N is the population and t is time. There is noise in the original data. We remove the noise and try to obtain the underlying curve using loess. It gives a smooth curve. Then we use that curve to find local slopes. nderiv gives precise slope of the local linear slope at every point.
+
+- this fits a spline to y=OD versus x=time, and then finds the time-stamp for maximum slope
+
+```{r}
+spline.time<-function(x, y, n=101, eps=1e-5, span=0.2){
+  estimates <- loess(log(y) ~ x, degree=1, span=span)
+  slopes <- nderiv(estimates, x)
+  return(which.max(slopes))
+}
+```
+
+## Reading and cleaning (1st round) the data
+
+Load all files and setup variables
+```{r}
+l <- list.files()
+
+# read all data into a list of data frames
+dfs <- lapply(l[endsWith(l, '.csv')], function(r){
+  d <- read.csv(r)
+  
+  assay.name <- str_replace(str_replace(r, 'Ref', 'Rutuja'), '.csv', '.txt')
+  assay.data <- read.delim(assay.name)
+  
+  # Change time column to 0, 0.25, 0.5, ...
+  assay.data$Time<-seq(from=0.25,by=0.25,length.out=nrow(assay.data))
+  
+  # calculate the maximum slope of fitted spline
+  # maximum growth rate
+  d$slope <- sapply(c(1:nrow(d)), function(r){
+    spline.slope(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
+  })
+  
+  # initial value OD (in the first hour)
+  d$initial <- sapply(c(1:nrow(d)), function(r){
+    mean(assay.data[,which(names(assay.data)==d$well[r])][1:4])
+  })
+  
+  # final value of OD (in the last hour when the data was measured)
+  # should be a saturated solution
+  d$final <- sapply(c(1:nrow(d)), function(r){
+    temp <- assay.data[,which(names(assay.data)==d$well[r])]
+    temp <- temp[!is.na(temp)]
+     n <- length(temp)
+    mean(assay.data[,which(names(assay.data)==d$well[r])][n-3:n])
+  })
+  
+  # find the time stamps for the maximum growth rate
+  d$time <- sapply(c(1:nrow(d)), function(r){
+    spline.time(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
+  })
+  
+  d$date <- mdy(str_replace(str_replace(r, 'Ref ', ''), '.csv', ' 2023'))
+  return(d)
+})
+
+# merge the list of data frames
+d <- dfs %>% reduce(bind_rows)
+
+dates.1 <- seq(mdy(04062023), mdy(04102023), 1)
+dates.2 <- seq(mdy(04282023), mdy(05052023), 1)
+
+# dates.2 <- c(dates.2, mdy(11022023))
+ancestors <- c('H1', 'H2', 'H3', 'D1', 'D2', 'D3')
+
+# these are all the haploid ancestors including the diploids that are supposed to be diploids
+ancestors.haploid <- c('H1', 'H2', 'H3', 'D2', 'D3')
+
+# these are haploids that were intended to be haploids
+anc.hap.og <- c('H1', 'H2', 'H3')
+
+# these are haploids that were intended to be diploids
+anc.hap.fake <- c('D2', 'D3')
+
+# this is the only actual diploid control that was diploid
+ancestors.diploid <- c('D1')
+
+# this MA line started out as a haploid but ended up as a diploid
+fake.haploids <- c(81)
+
+# these MA lines started out as diploids but ended up as haploids
+fake.diploids <- c(20, 28, 48, 52, 54, 84, 100)
+```
+
+Adding additional information for categorization. Excluding MA lines that changed ploidy. Excluding batch 1 due to lack of diploid controls.
+```{r}
+d$batch[d$date %in% dates.1] <- 1
+d$batch[d$date %in% dates.2] <- 2
+d$label <- d$treatment
+d$label[d$treatment == 'Blank'] <- '0'
+d$label[d$treatment == 'H1'] <- '101'
+d$label[d$treatment == 'D1'] <- '102'
+d$label[d$treatment == 'H2'] <- '103'
+d$label[d$treatment == 'D2'] <- '104'
+d$label[d$treatment == 'H3'] <- '105'
+d$label[d$treatment == 'D3'] <- '106'
+d$label[d$treatment == 'C1'] <- '107'
+d$label[d$treatment == 'C3'] <- '109'
+d$label <- as.numeric(d$label)
+
+d <- d %>% mutate(category = case_when(label == 0 ~ 'Blank',
+                              label > 100 & treatment %in% ancestors.haploid ~ 'Ctrl.H',
+                              label > 100 & treatment %in% ancestors.diploid ~ 'Ctrl.D',
+                              label %% 2 == 0 ~ 'MA.D',
+                              label %% 2 == 1 ~ 'MA.H'))
+
+
+d <- d %>% mutate(category = ifelse(label %in% fake.diploids, 'MA.H', category))
+d <- d %>% mutate(category = ifelse(label %in% fake.haploids, 'MA.D', category))
+
+d <- d %>% filter(batch == 2)
+```
+
+
+# Preliminary exploration
+
+Plot ancestors across all days to visually check for day effects
+```{r}
+d %>%
+  filter(category == 'Ctrl.H' | category == 'Ctrl.D') %>% ggplot() + geom_point(aes(x=treatment, y=slope, color=treatment)) + facet_wrap(vars(date))
+
+```
+
+Defining the blanks by using a linear model to set a cutoff for the blanks which can then be used to remove the other outliers by predicting the blank values for every day.
+```{r}
+blanks <-  d %>% filter(category == 'Blank')
+
+# visualize the blanks
+blanks %>% ggplot() + geom_histogram(aes(x=slope)) +
+  scale_x_log10()
+
+# setting cutoff for blanks around 
+bad.blanks <- blanks %>% filter(slope > 0.05)
+good.blanks <- blanks %>% filter(slope < 0.05)
+
+model <- lmer(slope~(1|date), data = good.blanks)
+dates.predict <- data.frame(date=distinct(d, date))
+dates.predict$null = predict(model, dates.predict)
+```
+
+
+Checking for effects of time (time taken to attain maximum growth rate). Each time stamp is of 15 minutes.
+```{r}
+d %>% filter(time<30) %>% ggplot() +
+  geom_histogram(aes(x=time))
+
+d %>% filter(time <= 20) %>% slice_max(order_by = time, n=100)
+```
+Samples with time < 20 were identified to be erroneous. 20 timestamps (4 hours) was a reasonable cutoff since the samples beyond that were more likely to be good.
+
+
+## Error removal
+
+Accounting for experimental error by removing lines according to the following rules:
+1. Remove the bad blanks.
+2. Remove the lines that did worse than the good blanks.
+3. Remove lines where the initial optical density was less than the final optical density since the optical density should not decrease unless there was an error.
+4. Remove the diploid ancestors that were found to be haploids.
+5. Remove the lines that reach saturation within the first 4 hours which is too soon to reach saturation.
+```{r}
+data <- d %>% 
+  anti_join(bad.blanks) %>%
+  full_join(dates.predict, by=join_by(date)) %>%
+  filter(initial <= final) %>%
+  filter(slope >= null) %>%
+  filter(!(treatment %in% anc.hap.fake)) %>%
+  filter(time > 20)
+```
+
+
+## Preparing for data analysis
+
+Data Analysis
+```{r}
+data <- data %>% select(treatment, label, slope, initial, date, category) %>%
+  filter(category != 'Blank')
+
+data$ploidy <- case_when(
+  data$category %in% c('Ctrl.H', 'MA.H') ~ 'Haploid',
+  data$category %in% c('Ctrl.D', 'MA.D') ~ 'Diploid'
+)
+
+data$MA <- case_when(
+  data$category %in% c('MA.H', 'MA.D') ~ 'MA',
+  data$category %in% c('Ctrl.H', 'Ctrl.D') ~ 'Ctrl',
+)
+
+```
+
+Relative fitness calculations for every line by using lmer predictions for both ancestors and MA lines. This is a slightly questionable approach but doesn't hurt to try
+```{r}
+trt <- data %>% filter(label > 0 & label <= 100)
+ctrl <- data %>% filter(label > 100)
+
+mod <- lm(slope ~ ploidy, ctrl)
+ctrl.predict <- data.frame(distinct(ctrl, ploidy))
+ctrl.predict$ctrl <- predict(mod, ctrl.predict)
+
+mod2 <- lm(slope ~ label, trt)
+trt.predict <- data.frame(distinct(trt, label, ploidy))
+trt.predict$trt <- predict(mod2, trt.predict)
+
+trt.predict <- left_join(trt.predict, ctrl.predict, by=c('ploidy'))
+trt.predict$rel.fit <- trt.predict$trt - trt.predict$ctrl
+
+mu.dip <- mean(trt.predict$rel.fit[trt.predict$ploidy == 'Diploid'])
+sd.dip <- sd(trt.predict$rel.fit[trt.predict$ploidy == 'Diploid'])
+
+mu.hap <- mean(trt.predict$rel.fit[trt.predict$ploidy == 'Haploid'])
+sd.hap <- sd(trt.predict$rel.fit[trt.predict$ploidy == 'Haploid'])
+
+
+trt.predict %>% ggplot() +
+  geom_histogram(aes(x=rel.fit), fill='black') +
+  facet_grid(rows = vars(ploidy)) +
+  geom_vline(data = data.frame(ploidy = c('Haploid', 'Diploid'),
+                               mu = c(mu.hap, mu.dip)),
+             aes(xintercept = mu, color = ploidy)) +
+  geom_vline(xintercept = 0, color = 'black') +
+  xlab("Relative Fitness") +
+  ylab("Number of Lines") +
+  guides(color = guide_legend(title = "Ploidy"))
+
+
+```
+
+
+Relative fitness calculations
+```{r}
+trt <- data %>% filter(label > 0 & label <= 100)
+ctrl <- data %>% filter(label > 100)
+
+mod <- lmer(slope ~ ploidy + (1|date), ctrl)
+ctrl.predict <- data.frame(distinct(ctrl, date, ploidy))
+ctrl.predict$ctrl <- predict(mod, ctrl.predict)
+trt <- left_join(trt, ctrl.predict, by=c('date', 'ploidy'))
+trt$rel.fit <- trt$slope - trt$ctrl
+
+trt <- trt %>% group_by(ploidy, label) %>%
+  summarize(rel.fit = median(rel.fit)) %>%
+  ungroup()
+
+mu.dip <- mean(trt$rel.fit[trt$ploidy == 'Diploid'])
+sd.dip <- sd(trt$rel.fit[trt$ploidy == 'Diploid'])
+
+mu.hap <- mean(trt$rel.fit[trt$ploidy == 'Haploid'])
+sd.hap <- sd(trt$rel.fit[trt$ploidy == 'Haploid'])
+
+
+trt %>% ggplot() +
+  geom_histogram(aes(x=rel.fit), fill='black') +
+  facet_grid(rows = vars(ploidy)) +
+  geom_vline(data = data.frame(ploidy = c('Haploid', 'Diploid'),
+                               mu = c(mu.hap, mu.dip)),
+             aes(xintercept = mu, color = ploidy)) +
+  geom_vline(xintercept = 0, color = 'black') +
+  xlab("Relative Fitness") +
+  ylab("Number of Lines") +
+  guides(color = guide_legend(title = "Ploidy"))
+```
+
+
+```{r}
+vioplot(trt[trt$ploidy == 'Haploid',]$rel.fit,
+        trt[trt$ploidy == 'Diploid',]$rel.fit,
+        names = c("Haploid", "Diploid"),
+        col = c('red', 'blue'))
+abline(a=0, b=0)
+```
+
+
+

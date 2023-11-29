@@ -18,8 +18,12 @@ author: "Dr Nathaniel Sharp"
 
 - this fits a spline to y=OD versus x=time, and then finds the maximum slope
 ```{r}
+# spline.slope<-function(x, y, n=101, eps=1e-5, span=0.2){
+#   max(nderiv(loess(log(y) ~ x, degree=1, span=span), seq(min(x), max(x), length=n)), na.rm=TRUE)
+# }
+
 spline.slope<-function(x, y, n=101, eps=1e-5, span=0.2){
-  max(nderiv(loess(log(y) ~ x, degree=1, span=span), seq(min(x), max(x), length=n)), na.rm=TRUE)
+  max(nderiv(loess(log(y) ~ x, degree=1, span=span), x), na.rm=TRUE)
 }
 ```
 
@@ -76,12 +80,14 @@ ggplot() + geom_point(aes(x=x[2:(length(x)-1)], y=slopes))
 
 # Using the values predicted by loess and nderiv to calculate the slope
 slopes2 <- nderiv(ess, x)
-ggplot() + geom_point(aes(x=x, y=slopes2), color='red') +
-  geom_point(aes(x=x[2:(length(x)-1)], y=slopes), alpha=0.3)
+ggplot() + geom_point(aes(x=x, y=slopes2), color='red', alpha=0.3) +
+  geom_point(aes(x=x[2:(length(x)-1)], y=slopes), color='blue', alpha=0.3)
 
 max(slopes2, na.rm=TRUE)
 which.max(slopes2)
 slopes2[89]
+
+# spline.time(x,y)
 ```
 
 > Spline fitting:
@@ -90,26 +96,14 @@ First we start by converting everything to log scale. During the exponential gro
 
 - this fits a spline to y=OD versus x=time, and then finds the time-stamp for maximum slope
 
-## Needs updating
 ```{r}
 spline.time<-function(x, y, n=101, eps=1e-5, span=0.2){
-  
+  estimates <- loess(log(y) ~ x, degree=1, span=span)
+  slopes <- nderiv(estimates, x)
+  return(which.max(slopes))
 }
 ```
 
-- this fits a linear regression model and extracts the slope
-```{r}
-well.lm.slope <- function(x, y){
-  lm(y ~ x)$coefficients[2]
-}
-```
-
-- this fits a linear regression model and extracts the sum of squared residuals
-```{r}
-well.lm.sse <- function(x, y){
-  sum((summary(lm(y~x))$residuals)^2)
-}
-```
 
 Load all files and setup variables
 ```{r}
@@ -121,6 +115,7 @@ dfs <- lapply(l[endsWith(l, '.csv')], function(r){
   
   assay.name <- str_replace(str_replace(r, 'Ref', 'Rutuja'), '.csv', '.txt')
   assay.data <- read.delim(assay.name)
+  
   # Change time column to 0, 0.25, 0.5, ...
   assay.data$Time<-seq(from=0.25,by=0.25,length.out=nrow(assay.data))
   # calculate slopes
@@ -139,6 +134,10 @@ dfs <- lapply(l[endsWith(l, '.csv')], function(r){
     mean(assay.data[,which(names(assay.data)==d$well[r])][n-3:n])
   })
   
+  d$time <- sapply(c(1:nrow(d)), function(r){
+    spline.time(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
+  })
+  
   d$date <- mdy(str_replace(str_replace(r, 'Ref ', ''), '.csv', ' 2023'))
   return(d)
 })
@@ -148,7 +147,7 @@ d <- dfs %>% reduce(bind_rows)
 
 dates.1 <- seq(mdy(04062023), mdy(04102023), 1)
 dates.2 <- seq(mdy(04282023), mdy(05052023), 1)
-dates.2 <- c(dates.2, mdy(11022023))
+# dates.2 <- c(dates.2, mdy(11022023))
 ancestors <- c('H1', 'H2', 'H3', 'D1', 'D2', 'D3')
 # these are all the haploid ancestors including the diploids that are supposed to be diploids
 ancestors.haploid <- c('H1', 'H2', 'H3', 'D2', 'D3')
@@ -187,12 +186,8 @@ d <- d %>% mutate(category = case_when(label == 0 ~ 'Blank',
                               label %% 2 == 1 ~ 'MA.H'))
 
 
-d2 <- d
-# exclude the haploid and diploid MA lines that switched ploidy for now
-d <- d %>% filter(!(label %in% fake.diploids)) %>%
-  filter(!(label %in% fake.haploids))
-# d <- d %>% mutate(category = ifelse(label %in% fake.diploids, 'MA.H', category))
-# d <- d %>% mutate(category = ifelse(label %in% fake.haploids, 'MA.D', category))
+d <- d %>% mutate(category = ifelse(label %in% fake.diploids, 'MA.H', category))
+d <- d %>% mutate(category = ifelse(label %in% fake.haploids, 'MA.D', category))
 
 d <- d %>% filter(batch == 2)
 ```
@@ -205,27 +200,17 @@ Use dates before taking average to check for day effects
 d %>%
   filter(category == 'Ctrl.H' | category == 'Ctrl.D') %>% ggplot() + geom_point(aes(x=treatment, y=slope, color=treatment)) + facet_wrap(vars(date))
 
-
-d %>%
-  filter(date == mdy(11022023)) %>% ggplot() +
-  geom_point(aes(x=treatment, y=slope, color=treatment))
 ```
 
 Outlier Hunt
 ```{r}
-d %>% slice_min(order_by = slope, n=30)
 mean(d$slope)
 median(d$slope)
 min(d$slope)
 max(d$slope)
 ```
 
-Trial plot after removing outliers
-```{r}
-# d %>% filter(slope > 0.010) %>% ggplot() + geom_point(aes(x=category, y=slope, color=category)) + facet_wrap(vars(date))
-```
-
-Trying a linear model to set a cutoff for the blanks which can then be used to remove the other outliers
+Using a linear model to set a cutoff for the blanks which can then be used to remove the other outliers by predicting the blank values for every day.
 ```{r}
 blanks <-  d %>% filter(category == 'Blank')
 blanks %>% ggplot() + geom_point(aes(x=slope, y=1)) +
@@ -239,6 +224,14 @@ model <- lmer(slope~(1|date), data = good.blanks)
 dates.predict <- data.frame(date=distinct(d, date))
 # dates.predict$batch <- c(rep(1,4), rep(2,4))
 dates.predict$null = predict(model, dates.predict)
+```
+
+
+Checking for effects of time
+```{r}
+d %>% filter(date == ymd(20230505)) %>% filter(well=='J15')
+d %>% ggplot() +
+  geom_histogram(aes(x=time))
 ```
 
 
@@ -262,7 +255,7 @@ diff %>% filter(date == ymd(20230430)) %>% select(well) %>% as.vector()
 
 Data Analysis
 ```{r}
-data <- data %>% select(date, well, treatment, label, category, slope) %>%
+data <- data %>% select(date, well, treatment, label, category, slope, initial) %>%
   filter(category != 'Blank')
 data$ploidy <- case_when(
   data$category %in% c('Ctrl.H', 'MA.H') ~ 'Haploid',
@@ -275,19 +268,49 @@ data$MA <- case_when(
 
 ```
 
+Relative fitness calculations for every line by using lmer predictions for both ancestors and MA lines. This is a slightly questionable approach but doesn't hurt to try
+```{r}
+trt <- data %>% filter(label > 0 & label <= 100)
+ctrl <- data %>% filter(label > 100)
+
+mod <- lm(slope ~ ploidy, ctrl)
+ctrl.predict <- data.frame(distinct(ctrl, ploidy))
+ctrl.predict$ctrl <- predict(mod, ctrl.predict)
+
+mod2 <- lm(slope ~ label, trt)
+trt.predict <- data.frame(distinct(trt, label, ploidy))
+trt.predict$trt <- predict(mod2, trt.predict)
+
+trt.predict <- left_join(trt.predict, ctrl.predict, by=c('ploidy'))
+trt.predict$rel.fit <- trt.predict$trt - trt.predict$ctrl
+
+mu.dip <- mean(trt.predict$rel.fit[trt.predict$ploidy == 'Diploid'])
+sd.dip <- sd(trt.predict$rel.fit[trt.predict$ploidy == 'Diploid'])
+
+mu.hap <- mean(trt.predict$rel.fit[trt.predict$ploidy == 'Haploid'])
+sd.hap <- sd(trt.predict$rel.fit[trt.predict$ploidy == 'Haploid'])
+
+
+trt.predict %>% ggplot() +
+  geom_histogram(aes(x=rel.fit), fill='black') +
+  facet_grid(rows = vars(ploidy)) +
+  geom_vline(data = data.frame(ploidy = c('Haploid', 'Diploid'),
+                               mu = c(mu.hap, mu.dip)),
+             aes(xintercept = mu, color = ploidy)) +
+  geom_vline(xintercept = 0, color = 'black') +
+  xlab("Relative Fitness") +
+  ylab("Number of Lines") +
+  guides(color = guide_legend(title = "Ploidy"))
+
+
+```
+
+
 Relative fitness calculations
 ```{r}
 trt <- data %>% filter(label > 0 & label <= 100)
 ctrl <- data %>% filter(label > 100)
 
-# Try filtering based on the control info
-ctrl <- ctrl %>% filter(treatment != 'H1') %>%
-  filter(treatment != 'H3')
-ctrl %>% ggplot() +
-  geom_point(aes(x=slope, y=treatment))
-
-
-# previous code
 mod <- lmer(slope ~ ploidy + (1|date), ctrl)
 ctrl.predict <- data.frame(distinct(ctrl, date, ploidy))
 ctrl.predict$ctrl <- predict(mod, ctrl.predict)
@@ -295,7 +318,7 @@ trt <- left_join(trt, ctrl.predict, by=c('date', 'ploidy'))
 trt$rel.fit <- trt$slope - trt$ctrl
 
 trt <- trt %>% group_by(ploidy, label) %>%
-  summarize(rel.fit = mean(rel.fit)) %>%
+  summarize(rel.fit = median(rel.fit)) %>%
   ungroup()
 
 mu.dip <- mean(trt$rel.fit[trt$ploidy == 'Diploid'])
@@ -319,11 +342,11 @@ trt %>% ggplot() +
 
 
 ```{r}
-# vioplot(trt[trt$ploidy == 'Haploid',]$rel.fit,
-#         trt[trt$ploidy == 'Diploid',]$rel.fit,
-#         names = c("Haploid", "Diploid"),
-#         col = c('red', 'blue'),
-#         ylim = c(-0.15, 0))
+vioplot(trt[trt$ploidy == 'Haploid',]$rel.fit,
+        trt[trt$ploidy == 'Diploid',]$rel.fit,
+        names = c("Haploid", "Diploid"),
+        col = c('red', 'blue'))
+abline(a=0, b=0)
 ```
 
 
@@ -599,9 +622,9 @@ trt2 %>% ggplot() +
 
 lmer for hypothesis testing
 ```{r}
-null <- lmer(slope ~ MA + ploidy + (1|date) + (1|treatment), data2)
+null <- lmer(slope ~ MA + ploidy + (1|date) + (1|treatment), data)
 summary(null)
-full <- lmer(slope ~ MA*ploidy + (1|date) + (1|treatment), data2)
+full <- lmer(slope ~ MA*ploidy + (1|date) + (1|treatment), data)
 summary(full)
 
 mod <- anova(null, full)
@@ -644,9 +667,9 @@ summary(full)
 null <- lmer(slope ~ 1 + (1|ploidy) + (1|initial) + (1|MA) + (1|treatment), data2)
 anova(full, null)
 
-full <- lmer(slope ~ ploidy * MA + initial + (1|treatment) + (1|date), data2)
+full <- lmer(slope ~ ploidy * MA + initial + (1|treatment) + (1|date), data)
 summary(full)
-null <- lmer(slope ~ ploidy + MA + initial + (1|treatment) + (1|date), data2)
+null <- lmer(slope ~ ploidy + MA + initial + (1|treatment) + (1|date), data)
 anova(full, null)
 
 
@@ -710,65 +733,6 @@ trt2 %>% ggplot() +
   xlab("Number of Mutations (SNM + indel)") +
   guides(color = guide_legend(title = "Ploidy"))
 
-```
-
-Growth rate curve
-```{r}
-p <- read.csv("Ref 05 03.csv")
-
-assay.name <- "Rutuja 05 03.txt"
-assay.data <- read.delim(assay.name)
-
-# spline.slope<-function(x, y, n=101, eps=1e-5, span=0.2){
-#   max(nderiv(loess(log(y) ~ x, degree=1, span=span), seq(min(x), max(x), length=n)), na.rm=TRUE)
-# }
-
-
-# Change time column to 0, 0.25, 0.5, ...
-assay.data$Time<-seq(from=0.25,by=0.25,length.out=nrow(assay.data))
-# calculate slopes
-p$slope <- sapply(c(1:nrow(p)), function(r){
-  # spline.slope(assay.data$Time, assay.data[,which(names(assay.data)==p$well[r])])
-  max(nderiv(loess(log(assay.data[,which(names(assay.data)==p$well[r])]) ~ assay.data$Time, degree=1, span=0.2), seq(min(assay.data$Time), max(assay.data$Time), length=101)), na.rm=TRUE)
-})
-
-
-fun <- function(r){
-  # spline.slope(assay.data$Time, assay.data[,which(names(assay.data)==p$well[r])])
-  (nderiv(loess(log(assay.data[,which(names(assay.data)==p$well[r])]) ~ assay.data$Time, degree=1, span=0.2), seq(min(assay.data$Time), max(assay.data$Time), length=101)))
-}
-
-
-p$time <- sapply(c(1:nrow(p)), function(r){
-    spline.time(assay.data$Time, assay.data[,which(names(assay.data)==p$well[r])])
-  })
-
-#nderiv(loess(assay.data$M15 ~ assay.data$Time, degree=1, span=0.2), assay.data$Time)
-#max(nderiv(loess(assay.data$M15 ~ assay.data$Time, degree=1, span=0.2), assay.data$Time), na.rm=TRUE)
-#which.max(nderiv(loess(assay.data$M15 ~ assay.data$Time, degree=1, span=0.2), assay.data$Time))
-#assay.data$M15[44]
-
-t <- data.frame(x = seq(10, 12, 0.25))
-slope = 0.05546986
-intercept = 0.442 - 0.05546986 * 11
-t <- t %>% mutate(y = slope * x + intercept)
-
-assay.data %>% ggplot() +
-  geom_line(aes(x=Time, y=M15)) +
-  scale_x_continuous(limits = c(0,24)) +
-  ylab("Optical Density") + 
-  geom_line(data = t, mapping=aes(x=x, y=y), color='Red', linewidth=1)
-
-
-
-# assay.data %>% ggplot() +
-#   geom_line(aes(x=Time, y=M15)) +
-#   scale_x_continuous(limits = c(0,24)) +
-#   ylab("Optical Density") 
-  # geom_abline(slope = 0.1356135, 
-  #             intercept = 0.213 -
-  #               0.1356135 * 4.75)
-  # 
 ```
 
 
