@@ -18,7 +18,7 @@ author: "Dr Nathaniel Sharp"
 
 - this fits a spline to y=OD versus x=time, and then finds the maximum slope
 ```{r}
-spline.slope<-function(x, y, n=101, eps=1e-5, span=0.2){
+spline.slope<-function(x, y, n=101, eps=1e-5, span=0.075){
   max(nderiv(loess(log(y) ~ x, degree=1, span=span), x), na.rm=TRUE)
 }
 ```
@@ -29,53 +29,6 @@ spline.slope<-function(x, y, n=101, eps=1e-5, span=0.2){
 nderiv <- function(fit, x, eps=1e-5){
   (predict(fit, x + eps) - predict(fit, x - eps))/(2 * eps)}
 
-```
-
-
----
-title: "Confidence Intervals"
-author: "Miranda Rintoul"
-date: '2022-10-02'
----
-
-```{r}
-# Function to build 100(1-alpha) bootstrap CI
-
-boot_ci <- function(data, n_boot, alpha){
-  # Get summaries from the data
-  n <- length(data)
-  x_bar <- mean(data)
-  s <- sd(data)
-  se <- s/sqrt(n)
-  
-  # Vector to store bootstrap samples
-  t_hat <- numeric(n_boot)
-  
-  # Bootstrap loop
-  for(i in 1:n_boot){
-    # 2. Draw a SRS of size n
-    x_star <- sample(data, size = n, replace = T)
-    
-    # 3. Calculate resampled mean and sd
-    x_bar_star <- mean(x_star)
-    s_star <- sd(x_star)
-    
-    # 4. Calculate t_hat, and store it in vector
-    t_hat[i] <- (x_bar_star - x_bar) / (s_star/sqrt(n))
-  }
-  
-  # Find upper and lower critical values of approx. distribution
-  t_lower <- quantile(t_hat, probs = alpha/2, names = F)
-  t_upper <- quantile(t_hat, probs = 1 - (alpha/2), names = F)
-  
-  # Build final CI
-  boot_ci_upper <- x_bar - t_lower*se
-  boot_ci_lower <- x_bar - t_upper*se
-  
-  ci <- c(boot_ci_lower, boot_ci_upper)
-  
-  return(ci)
-}
 ```
 
 
@@ -105,11 +58,12 @@ ref$slope <- sapply(c(1:nrow(ref)), function(r){
     spline.slope(assay$Time, assay[,which(names(assay)==ref$well[r])])
   })
 
-y <- assay$J15
+# y <- assay$J15
+y <- assay$K13
 x <- assay$Time
 
 # loess gives a smooth version of the curve
-ess <- loess(log(y) ~ x, degree=1, span=0.2)
+ess <- loess(log(y) ~ x, degree=1, span=0.05)
 p <- predict(ess, x)
 ```
 
@@ -129,7 +83,7 @@ ggplot() + geom_point(aes(x=x, y=slopes), color='red')
 # verifying the that the sequence of steps above gives the correct answer
 max(slopes, na.rm=TRUE)
 which.max(slopes)
-slopes[89]
+slopes[82]
 
 ```
 
@@ -140,7 +94,7 @@ First we start by converting everything to log scale. During the exponential gro
 - this fits a spline to y=OD versus x=time, and then finds the time-stamp for maximum slope 
 
 ```{r}
-spline.time<-function(x, y, n=101, eps=1e-5, span=0.2){
+spline.time<-function(x, y, n=101, eps=1e-5, span=0.075){
   estimates <- loess(log(y) ~ x, degree=1, span=span)
   slopes <- nderiv(estimates, x)
   return(which.max(slopes))
@@ -168,7 +122,7 @@ dfs <- lapply(l[endsWith(l, '.csv')], function(r){
   # calculate the maximum slope of fitted spline
   # maximum growth rate
   d$slope <- sapply(c(1:nrow(d)), function(r){
-    spline.slope(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
+    spline.slope(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])], span=0.05)
   })
   
   # initial value OD (in the first hour)
@@ -187,10 +141,16 @@ dfs <- lapply(l[endsWith(l, '.csv')], function(r){
   
   # find the time stamps for the maximum growth rate
   d$time <- sapply(c(1:nrow(d)), function(r){
-    spline.time(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])])
+    spline.time(assay.data$Time, assay.data[,which(names(assay.data)==d$well[r])], span=0.05)
   })
   
   d$date <- mdy(str_replace(str_replace(r, 'Ref ', ''), '.csv', ' 2023'))
+  
+  d$monotone <- sapply(c(1:nrow(d)), function(r){
+    y <- assay.data[,which(names(assay.data)==d$well[r])]
+    x <- assay.data$Time
+    return(sum(nderiv(loess(log(y) ~ x, degree=1, span=0.2), x) < 0, na.rm=TRUE))
+  })
   return(d)
 })
 ```
@@ -227,6 +187,7 @@ fake.diploids <- c(20, 28, 48, 52, 54, 84, 100)
 # these have an aneuploidy of chromosome 3
 aneuploids <- c(45, 68, 98)
 ```
+
 
 Adding additional information for categorization. Excluding MA lines that changed ploidy. Excluding batch 1 due to lack of diploid controls.
 ```{r}
@@ -316,11 +277,12 @@ Accounting for experimental error by removing lines according to the following r
 ```{r}
 data <- d %>% 
   anti_join(bad.blanks) %>%
-  full_join(dates.predict, by=join_by(date)) %>%
-  filter(slope >= null) %>%
+  # full_join(dates.predict, by=join_by(date)) %>%
+  # filter(slope >= null) %>%
   filter(initial <= final) %>%
   filter(!(treatment %in% anc.hap.fake)) %>%
-  filter(time > 20) 
+  # filter(time > 20) %>%
+  filter(monotone == 0)
 ```
 
 Plotting the ancestors again
@@ -348,9 +310,6 @@ ctrls %>% ggplot() + geom_histogram(aes(x=slope))
 
 ```{r}
 ci <- quantile(ctrls$slope, probs = c(0.025, 0.975))
-
-boot_ci(ctrls$slope, 1000, 0.05)
-t.test(ctrls$slope)$conf.int
 ```
 
 ```{r, echo=FALSE}
@@ -389,9 +348,15 @@ data_clean %>%
 ## Preparing for data analysis
 
 ```{r}
-df <- data_clean %>% 
+# df <- data_clean %>% 
+#   select(treatment, label, slope, initial, date, category, time) %>%
+#   filter(category != 'Blank')
+
+df <- data %>% 
+  filter(date != mdy(11022023)) %>%
   select(treatment, label, slope, initial, date, category, time) %>%
   filter(category != 'Blank')
+
 
 df <- df %>% rename('lineid' = 'treatment')
 
@@ -405,6 +370,10 @@ df$MA <- case_when(
   df$category %in% c('Ctrl.H', 'Ctrl.D') ~ 'Ctrl',
 )
 
+dates <- df %>% distinct(date)
+alphabet <- c('A', 'B', 'C', 'D')
+dates <- dates %>% mutate(day = alphabet)
+df <- df %>% left_join(dates, by='date') %>% select(-date)
 ```
 
 
@@ -419,14 +388,14 @@ trt <- df %>% filter(label > 0 & label <= 100)
 ctrl <- df %>% filter(label > 100)
 
 # model to predict the slope of the ancestors of each ploidy with date as a random effect
-mod <- lmer(slope ~ ploidy + (1|date), ctrl)
+mod <- lmer(slope ~ ploidy + (1|day), ctrl)
 
 # making predictions for each date
-ctrl.predict <- data.frame(distinct(ctrl, date, ploidy))
+ctrl.predict <- data.frame(distinct(ctrl, day, ploidy))
 ctrl.predict$ctrl <- predict(mod, ctrl.predict)
 
 # combining with the MA line dateset
-trt <- left_join(trt, ctrl.predict, by=c('date', 'ploidy'))
+trt <- left_join(trt, ctrl.predict, by=c('day', 'ploidy'))
 
 # calculating relative fitness as the difference between the slope for the MA line and its ancestor
 trt$rel.fit <- trt$slope - trt$ctrl
@@ -461,8 +430,8 @@ trt %>% ggplot() +
 ### Using lmer models to test for any differences between the ancestors
 
 ```{r}
-null <- lmer(slope ~ 1 + (1|date), ctrl)
-full <- lmer(slope ~ ploidy + (1|date), ctrl)
+null <- lmer(slope ~ 1 + (1|day), ctrl)
+full <- lmer(slope ~ ploidy + (1|day), ctrl)
 summary(full)
 
 mod <- anova(null, full)
@@ -476,21 +445,64 @@ Ploidy does not have a significant effect on fitness in the ancestors.
 ##### Looking for MA-ploidy interaction:
 
 ```{r}
-null <- lmer(slope ~ MA + ploidy + (1|date) + (1|lineid), df)
+null <- lmer(slope ~ MA + ploidy + (1|day) + (1|lineid), df)
 summary(null)
-full <- lmer(slope ~ MA*ploidy + (1|date) + (1|lineid), df)
+full <- lmer(slope ~ MA*ploidy + (1|day) + (1|lineid), df)
 summary(full)
 
 mod <- anova(null, full)
 mod
+
 ```
+
+Looking at the predictions made by the lmer model
+```{r}
+predictions <- predict(full, df[, c('MA', 'ploidy', 'day', 'lineid')])
+ggplot() +
+  geom_point(aes(x=df$slope, y=predictions)) +
+  geom_abline(slope = 1, intercept = 0, color='red') +
+  xlim(0, NA) +
+  ylim(0, NA)
+
+ggplot() +
+  geom_point(aes(x=df$slope, y=fitted(full), color=df$day)) +
+  geom_abline(slope = 1, intercept = 0, color='red') +
+  xlim(0, NA) +
+  ylim(0, NA)
+
+
+ggplot() + geom_point(aes(x=fitted(full), y= resid(full),
+                          color=df$day)) #+ theme(legend.position = "none")
+
+plot(full)
+summary(full)
+
+ggplot() + geom_histogram(aes(x=resid(full)), fill='black')
+
+qqnorm(resid(full))
+```
+
+
+Dropping random effects
+```{r}
+null <- lmer(slope ~ MA*ploidy + (1|lineid), df)
+summary(null)
+full <- lmer(slope ~ MA*ploidy + (1|day) + (1|lineid), df)
+summary(full)
+
+mod <- anova(null, full)
+mod
+
+```
+
+
 
 ##### Exploring effect of MA on the slope
 
 ```{r}
 # lmer for effect of MA
-null <- lmer(slope ~ 1 + (1|date) + (1|lineid), df)
-full <- lmer(slope ~ MA + (1|date) + (1|lineid), df)
+null <- lmer(slope ~ 1 + ploidy + (1|day) + (1|lineid), df)
+full <- lmer(slope ~ MA + ploidy + (1|day) + (1|lineid), df)
 summary(full)
 
 mod <- anova(null, full)
@@ -501,8 +513,8 @@ mod
 ##### Exploring effect of ploidy on the slope 
 
 ```{r}
-null <- lmer(slope ~ 1 + (1|date) + (1|lineid), df)
-full <- lmer(slope ~ ploidy + (1|date) + (1|lineid), df)
+null <- lmer(slope ~ 1 + MA + (1|day) + (1|lineid), df)
+full <- lmer(slope ~ ploidy + MA + (1|day) + (1|lineid), df)
 summary(full)
 
 mod <- anova(null, full)
@@ -535,6 +547,8 @@ trt2 %>% ggplot() +
                filter(ploidy.x == 'Haploid'),
              aes(x=mutations, y=rel.fit), color = 'blue', shape='triangle', size = 3) 
 ```
+
+Some haploids have a relative fitness that is greater than 0. They have the benefit of recessive beneficial mutations which are not masked by a second set of chromosomes. No beneficial effects observed for diploids.
 
 ##### Using a linear model to explore mutation rate and ploidy interaction
 
@@ -573,9 +587,9 @@ df <- df %>% left_join(mut_join) %>%
 ##### Mutation rate - ploidy interaction
 
 ```{r}
-null <- lmer(slope ~ mutations + ploidy + (1|date) + (1|lineid), df)
+null <- lmer(slope ~ mutations + ploidy + (1|day) + (1|lineid), df)
 summary(null)
-full <- lmer(slope ~ mutations*ploidy + (1|date) + (1|lineid), df)
+full <- lmer(slope ~ mutations*ploidy + (1|day) + (1|lineid), df)
 summary(full)
 
 mod <- anova(null, full)
@@ -585,8 +599,8 @@ mod
 ##### Effect of mutations
 
 ```{r}
-null <- lmer(slope ~ 1 + (1|date) + (1|lineid), df)
-full <- lmer(slope ~ mutations + (1|date) + (1|lineid), df)
+null <- lmer(slope ~ ploidy + (1|day) + (1|lineid), df)
+full <- lmer(slope ~ mutations + ploidy + (1|day) + (1|lineid), df)
 summary(full)
 
 mod <- anova(null, full)
@@ -596,8 +610,8 @@ mod
 ###### Effect of ploidy
 
 ```{r}
-null <- lmer(slope ~ 1 + (1|date) + (1|lineid), df)
-full <- lmer(slope ~ ploidy + (1|date) + (1|lineid), df)
+null <- lmer(slope ~ 1 + mutations + (1|day) + (1|lineid), df)
+full <- lmer(slope ~ ploidy + mutations + (1|day) + (1|lineid), df)
 summary(full)
 
 mod <- anova(null, full)
