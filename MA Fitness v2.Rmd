@@ -63,7 +63,7 @@ y <- assay$K13
 x <- assay$Time
 
 # loess gives a smooth version of the curve
-ess <- loess(log(y) ~ x, degree=1, span=0.05)
+ess <- loess(log(y) ~ x, degree=1, span=0.075)
 p <- predict(ess, x)
 ```
 
@@ -83,7 +83,7 @@ ggplot() + geom_point(aes(x=x, y=slopes), color='red')
 # verifying the that the sequence of steps above gives the correct answer
 max(slopes, na.rm=TRUE)
 which.max(slopes)
-slopes[82]
+slopes[83]
 
 ```
 
@@ -277,12 +277,11 @@ Accounting for experimental error by removing lines according to the following r
 ```{r}
 data <- d %>% 
   anti_join(bad.blanks) %>%
-  # full_join(dates.predict, by=join_by(date)) %>%
-  # filter(slope >= null) %>%
+  full_join(dates.predict, by=join_by(date)) %>%
+  filter(slope >= null) %>%
   filter(initial <= final) %>%
   filter(!(treatment %in% anc.hap.fake)) %>%
-  # filter(time > 20) %>%
-  filter(monotone == 0)
+  filter(time > 20)
 ```
 
 Plotting the ancestors again
@@ -309,8 +308,14 @@ ctrls %>% ggplot() + geom_histogram(aes(x=slope))
 ```
 
 ```{r}
-ci <- quantile(ctrls$slope, probs = c(0.025, 0.975))
+ci <- quantile(ctrls$slope, probs = c(0.025, 0.9))
 ```
+
+```{r, include=FALSE}
+ctrls %>% ggplot() + geom_histogram(aes(x=slope)) +
+  geom_vline(xintercept = ci, color='red', linetype='dashed')
+```
+
 
 ```{r, echo=FALSE}
 data %>%
@@ -348,15 +353,9 @@ data_clean %>%
 ## Preparing for data analysis
 
 ```{r}
-# df <- data_clean %>% 
-#   select(treatment, label, slope, initial, date, category, time) %>%
-#   filter(category != 'Blank')
-
-df <- data %>% 
-  filter(date != mdy(11022023)) %>%
+df <- data_clean %>%
   select(treatment, label, slope, initial, date, category, time) %>%
   filter(category != 'Blank')
-
 
 df <- df %>% rename('lineid' = 'treatment')
 
@@ -455,44 +454,16 @@ mod
 
 ```
 
-Looking at the predictions made by the lmer model
-```{r}
-predictions <- predict(full, df[, c('MA', 'ploidy', 'day', 'lineid')])
-ggplot() +
-  geom_point(aes(x=df$slope, y=predictions)) +
-  geom_abline(slope = 1, intercept = 0, color='red') +
-  xlim(0, NA) +
-  ylim(0, NA)
-
-ggplot() +
-  geom_point(aes(x=df$slope, y=fitted(full), color=df$day)) +
-  geom_abline(slope = 1, intercept = 0, color='red') +
-  xlim(0, NA) +
-  ylim(0, NA)
-
-
-ggplot() + geom_point(aes(x=fitted(full), y= resid(full),
-                          color=df$day)) #+ theme(legend.position = "none")
-
-plot(full)
-summary(full)
-
-ggplot() + geom_histogram(aes(x=resid(full)), fill='black')
-
-qqnorm(resid(full))
-```
-
 
 Dropping random effects
 ```{r}
-null <- lmer(slope ~ MA*ploidy + (1|lineid), df)
+null <- lmer(slope ~ MA*ploidy + (1|day), df)
 summary(null)
 full <- lmer(slope ~ MA*ploidy + (1|day) + (1|lineid), df)
 summary(full)
 
 mod <- anova(null, full)
 mod
-
 ```
 
 
@@ -548,7 +519,7 @@ trt2 %>% ggplot() +
              aes(x=mutations, y=rel.fit), color = 'blue', shape='triangle', size = 3) 
 ```
 
-Some haploids have a relative fitness that is greater than 0. They have the benefit of recessive beneficial mutations which are not masked by a second set of chromosomes. No beneficial effects observed for diploids.
+Some haploids have a relative fitness that is greater than 0. They have the benefit of recessive beneficial mutations which are not masked by a second set of chromosomes. Fewer beneficial effects observed for diploids.
 
 ##### Using a linear model to explore mutation rate and ploidy interaction
 
@@ -599,7 +570,7 @@ mod
 ##### Effect of mutations
 
 ```{r}
-null <- lmer(slope ~ ploidy + (1|day) + (1|lineid), df)
+null <- lmer(slope ~ 1 + ploidy + (1|day) + (1|lineid), df)
 full <- lmer(slope ~ mutations + ploidy + (1|day) + (1|lineid), df)
 summary(full)
 
