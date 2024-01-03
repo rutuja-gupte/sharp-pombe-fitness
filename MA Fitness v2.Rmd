@@ -28,7 +28,6 @@ spline.slope<-function(x, y, n=101, eps=1e-5, span=0.075){
 ```{r}
 nderiv <- function(fit, x, eps=1e-5){
   (predict(fit, x + eps) - predict(fit, x - eps))/(2 * eps)}
-
 ```
 
 
@@ -67,20 +66,19 @@ ess <- loess(log(y) ~ x, degree=1, span=0.075)
 p <- predict(ess, x)
 ```
 
+Plotting the estimates and log values to check that they overlap
 ```{r, echo=FALSE}
-# plotting the estimates and log values to check that they overlap
 ggplot() +
   geom_point(aes(y=log(y), x=x)) +
   geom_point(aes(y=p, x=x), color='red') +
   geom_line(aes(y=p, x=x), color='blue')
 ```
 
+Using the values predicted by loess and nderiv to calculate the slope and verifying the that the sequence of steps above gives the correct answer
 ```{r}
-# Using the values predicted by loess and nderiv to calculate the slope
 slopes <- nderiv(ess, x)
 ggplot() + geom_point(aes(x=x, y=slopes), color='red')
 
-# verifying the that the sequence of steps above gives the correct answer
 max(slopes, na.rm=TRUE)
 which.max(slopes)
 slopes[83]
@@ -89,7 +87,7 @@ slopes[83]
 
 ### Spline fitting:
 
-First we start by converting everything to log scale. During the exponential growth phase, log(N) is proportional to t where N is the population and t is time. There is noise in the original data. We remove the noise and try to obtain the underlying curve using loess. It gives a smooth curve. Then we use that curve to find local slopes. nderiv gives precise slope of the local linear slope at every point.  
+First we start by converting everything to log scale. During the exponential growth phase, log(N) is proportional to t where N is the population and t is time. There is noise in the original data. We remove the noise and try to obtain the underlying curve using loess. It gives a smooth curve. Then we use that curve to find local slopes. nderiv gives precise estimate of the local linear slope at every point.  
 
 - this fits a spline to y=OD versus x=time, and then finds the time-stamp for maximum slope 
 
@@ -235,14 +233,16 @@ Defining the blanks by using a linear model to set a cutoff for the blanks which
 blanks <-  d %>% filter(category == 'Blank')
 ```
 
+
+visualize the blanks
 ```{r, echo=FALSE}
-# visualize the blanks
 blanks %>% ggplot() + geom_histogram(aes(x=slope)) +
   scale_x_log10()
 ```
 
+
+Setting cutoff for blanks around 0.05 and using the good blanks to make blank predictions for each day.
 ```{r}
-# setting cutoff for blanks around 
 bad.blanks <- blanks %>% filter(slope > 0.05)
 good.blanks <- blanks %>% filter(slope < 0.05)
 
@@ -305,14 +305,21 @@ ctrls <- data %>% filter(date == mdy(11022023)) %>% filter(treatment %in% c('C1'
 
 ```{r, echo=FALSE}
 ctrls %>% ggplot() + geom_histogram(aes(x=slope))
+ctrls %>% ggplot() + geom_density(aes(x=slope))
 ```
 
 ```{r}
-ci <- quantile(ctrls$slope, probs = c(0.025, 0.9))
+# ci <- quantile(ctrls$slope, probs = c(0.025, 0.975))
+
+ci <- c(quantile(ctrls$slope, 0.25) - 1.5* IQR(ctrls$slope),
+        quantile(ctrls$slope, 0.75) + 1.5* IQR(ctrls$slope))
 ```
 
 ```{r, include=FALSE}
 ctrls %>% ggplot() + geom_histogram(aes(x=slope)) +
+  geom_vline(xintercept = ci, color='red', linetype='dashed')
+
+ctrls %>% ggplot() + geom_density(aes(x=slope)) +
   geom_vline(xintercept = ci, color='red', linetype='dashed')
 ```
 
@@ -355,7 +362,7 @@ data_clean %>%
 ```{r}
 df <- data_clean %>%
   select(treatment, label, slope, initial, date, category, time) %>%
-  filter(category != 'Blank')
+  filter(category != 'Blank') 
 
 df <- df %>% rename('lineid' = 'treatment')
 
@@ -370,6 +377,8 @@ df$MA <- case_when(
 )
 
 dates <- df %>% distinct(date)
+
+# Labeling the dates
 alphabet <- c('A', 'B', 'C', 'D')
 dates <- dates %>% mutate(day = alphabet)
 df <- df %>% left_join(dates, by='date') %>% select(-date)
@@ -426,6 +435,8 @@ trt %>% ggplot() +
   guides(color = guide_legend(title = "Ploidy"))
 ```
 
+Black line is the 0 line. The diploid MA lines performed worse than the haploid MA lines. 
+
 ### Using lmer models to test for any differences between the ancestors
 
 ```{r}
@@ -444,28 +455,14 @@ Ploidy does not have a significant effect on fitness in the ancestors.
 ##### Looking for MA-ploidy interaction:
 
 ```{r}
-null <- lmer(slope ~ MA + ploidy + (1|day) + (1|lineid), df)
+null <- lmer(slope ~ MA + ploidy + (1|day), df)
 summary(null)
-full <- lmer(slope ~ MA*ploidy + (1|day) + (1|lineid), df)
-summary(full)
-
-mod <- anova(null, full)
-mod
-
-```
-
-
-Dropping random effects
-```{r}
-null <- lmer(slope ~ MA*ploidy + (1|day), df)
-summary(null)
-full <- lmer(slope ~ MA*ploidy + (1|day) + (1|lineid), df)
+full <- lmer(slope ~ MA*ploidy + (1|day), df)
 summary(full)
 
 mod <- anova(null, full)
 mod
 ```
-
 
 
 ##### Exploring effect of MA on the slope
@@ -478,8 +475,8 @@ summary(full)
 
 mod <- anova(null, full)
 mod
-
 ```
+The MA lines have different slopes than the ancestors
 
 ##### Exploring effect of ploidy on the slope 
 
@@ -491,6 +488,7 @@ summary(full)
 mod <- anova(null, full)
 mod
 ```
+Haploids have different slopes than the diploids
 
 
 ##### Combining information from the mutation rate dataset
@@ -566,6 +564,7 @@ summary(full)
 mod <- anova(null, full)
 mod
 ```
+No significant interaction in number of mutations and ploidy
 
 ##### Effect of mutations
 
@@ -587,7 +586,6 @@ summary(full)
 
 mod <- anova(null, full)
 mod
-
 ```
 
 
