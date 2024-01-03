@@ -1,0 +1,38 @@
+---
+title: "MA Fitness v3.Rmd"
+author: "Rutuja"
+date: "2023-12-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Looking at the predictions made by the lmer model
+```{r}
+predictions <- predict(full, df[, c('MA', 'ploidy', 'day', 'lineid')])
+ggplot() +
+  geom_point(aes(x=df$slope, y=predictions)) +
+  geom_abline(slope = 1, intercept = 0, color='red') +
+  xlim(0, NA) +
+  ylim(0, NA)
+
+ggplot() +
+  geom_point(aes(x=df$slope, y=fitted(full), color=df$day)) +
+  geom_abline(slope = 1, intercept = 0, color='red') +
+  xlim(0, NA) +
+  ylim(0, NA)
+
+
+ggplot() + geom_point(aes(x=fitted(full), y= resid(full),
+                          color=df$day)) #+ theme(legend.position = "none")
+
+plot(full)
+summary(full)
+
+ggplot() + geom_histogram(aes(x=resid(full)), fill='black')
+
+qqnorm(resid(full))
+```
+
