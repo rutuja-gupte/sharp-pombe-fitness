@@ -11,5 +11,7 @@ Rutuja Gupte, Kevin Bao, Nathaniel Sharp
 - [Biology 152 IP.Rmd](<Biology 152 IP.Rmd>): Source code for the Biology 152 independent project analysis code  
 - [Biology-152-IP.html](Biology-152-IP.Rmd): HTML version of the analysis for Biology 152 independent project  
 - [MA Fitness v2.Rmd](<MA Fitness v2.Rmd>): Source code for the entire analysis of the fitness data for the lab  
-- [MA-Fitness-v2.html](MA-Fitness-v2.html): Source code for the entire analysis of the fitness data for the lab  
-- [Plotting Plates.ipynb](<Plotting Plates.ipynb>): Python code for plotting the assay data for every well  
+- [MA-Fitness-v2.html](MA-Fitness-v2.html): HTML version for the entire analysis of the fitness data for the lab  
+- [Plotting Plates.ipynb](<Plotting Plates.ipynb>): Python code for plotting the assay data for every well
+- [MA Fitness v3.Rmd](<MA Fitness v3.Rmd>): Source code for the analysis using modified error removal criteria
+- [MA-Fitness-v3.html](<MA-Fitness-v3.html>): HTML version for the analysis using modified error removal criteria  
