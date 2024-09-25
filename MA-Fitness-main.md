@@ -1,11 +1,11 @@
-MA Fitness
+MA Fitness FA24
 ================
-Rutuja Gupte
+Rutuja
 2024-09-23
 
 # Setup functions
 
-### this fits a spline to y=OD versus x=time, and then finds the maximum slope
+### This fits a spline to y=OD versus x=time, and then finds the maximum slope
 
 ``` r
 spline.slope<-function(x, y, n=101, eps=1e-5, span=0.075){
@@ -13,14 +13,14 @@ spline.slope<-function(x, y, n=101, eps=1e-5, span=0.075){
 }
 ```
 
-### used by the function above to get a local (linear) slope around a point
+### Used by the function above to get a local (linear) slope around a point
 
 ``` r
 nderiv <- function(fit, x, eps=1e-5){
   (predict(fit, x + eps) - predict(fit, x - eps))/(2 * eps)}
 ```
 
-### Spline fitting:
+## Spline fitting:
 
 First we start by converting everything to log scale. During the
 exponential growth phase, log(N) is proportional to t where N is the
@@ -33,88 +33,154 @@ precise estimate of the local linear slope at every point.
   time-stamp for maximum slope
 
 ``` r
-# spline.time<-function(x, y, n=101, eps=1e-5, span=0.075){
-#   estimates <- loess(log(y) ~ x, degree=1, span=span)
-#   slopes <- nderiv(estimates, x)
-#   return(which.max(slopes))
-# }
+spline.time<-function(x, y, n=101, eps=1e-5, span=0.075){
+  estimates <- loess(log(y) ~ x, degree=1, span=span)
+  slopes <- nderiv(estimates, x)
+  return(which.max(slopes))
+}
 ```
 
 **Note that the unit of the time stamp is the number of 15 minute
 intervals from the beginning of measurement.**
 
+## Figuring out the parameters for the splines
+
+``` r
+d <- read.csv("data/Ref 04 06.csv")
+assay.data <- read.delim("data/Rutuja 04 06.txt")
+```
+
+``` r
+well <- assay.data$B19
+time <- seq(1, length(well))
+
+
+ggplot() + 
+  geom_point(aes(x=time, y=well))
+```
+
+    ## Warning: Removed 43 rows containing missing values or values outside the scale range
+    ## (`geom_point()`).
+
+![](MA-Fitness-main_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
+
+``` r
+## Now trying to smooth 
+smoothed <- predict(loess(log(well) ~ time, degree=1, span=0.05), time)
+```
+
+    ## Warning in simpleLoess(y, x, w, span, degree = degree, parametric = parametric,
+    ## : k-d tree limited by memory. ncmax= 200
+
+``` r
+ggplot() + 
+  geom_point(aes(x=time, y=smoothed), color="red") +
+  geom_point(aes(x=time, y=log(well)))
+```
+
+    ## Warning: Removed 43 rows containing missing values or values outside the scale range
+    ## (`geom_point()`).
+    ## Removed 43 rows containing missing values or values outside the scale range
+    ## (`geom_point()`).
+
+![](MA-Fitness-main_files/figure-gfm/unnamed-chunk-6-2.png)<!-- -->
+
+``` r
+# slopes <- nderiv(log(well), time)
+# fitted.slopes <- nderiv(log(well), time)
+```
+
 ## Reading and cleaning the data
 
 Load all files and setup variables
 
+This is just some information from the experiment. Using the info to
+make sure everything is labelled right and is categorized right
+downstream.
+
 ``` r
-# # merge the list of data frames
-# d <- dfs %>% reduce(bind_rows)
-# 
-# dates.1 <- seq(mdy(04062023), mdy(04102023), 1)
-# dates.2 <- seq(mdy(04282023), mdy(11302023), 1)
-# dates.2 <- c(dates.2, mdy(11022023))
-# ancestors <- c('H1', 'H2', 'H3', 'D1', 'D2', 'D3')
-# 
-# # these are all the haploid ancestors including the diploids that are supposed to be diploids
-# ancestors.haploid <- c('H1', 'H2', 'H3', 'D2', 'D3', 'C1', 'C3')
-# 
-# # these are haploids that were intended to be haploids
-# anc.hap.og <- c('H1', 'H2', 'H3', 'C1', 'C2')
-# 
-# # these are haploids that were intended to be diploids
-# anc.hap.fake <- c('D2', 'D3')
-# 
-# # this is the only actual diploid control that was diploid
-# ancestors.diploid <- c('D1')
-# 
-# # this MA line started out as a haploid but ended up as a diploid
-# fake.haploids <- c(81)
-# 
-# # these MA lines started out as diploids but ended up as haploids
-# fake.diploids <- c(20, 28, 48, 52, 54, 84, 100)
-# 
-# # these have an aneuploidy of chromosome 3
-# aneuploids <- c(45, 68, 98)
+dates.1 <- seq(mdy(04062023), mdy(04102023), 1)
+dates.2 <- seq(mdy(04282023), mdy(11302023), 1)
+dates.2 <- c(dates.2, mdy(11022023))
+
+ancestors <- c('H1', 'H2', 'H3', 'D1', 'D2', 'D3')
+
+# these are all the haploid ancestors including the diploids that are found to haploids
+ancestors.haploid <- c('H1', 'H2', 'H3', 'D2', 'D3', 'C1', 'C3')
+
+# these are haploids that were intended to be haploids
+anc.hap.og <- c('H1', 'H2', 'H3', 'C1', 'C2')
+
+# these are haploids that were intended to be diploids
+anc.hap.fake <- c('D2', 'D3')
+
+# this is the only actual diploid control that was diploid
+ancestors.diploid <- c('D1')
+
+# this MA line started out as a haploid but ended up as a diploid
+fake.haploids <- c(81)
+
+# these MA lines started out as diploids but ended up as haploids
+fake.diploids <- c(20, 28, 48, 52, 54, 84, 100)
+
+# these have an aneuploidy of chromosome 3
+aneuploids <- c(45, 68, 98)
 ```
 
 Adding additional information for categorization. Excluding MA lines
 that changed ploidy. Excluding batch 1 due to lack of diploid controls.
 
 ``` r
-# d$batch[d$date %in% dates.1] <- 1
-# d$batch[d$date %in% dates.2] <- 2
-# 
-# d <- d %>% filter(batch == 2)
-# 
-# d$label <- d$treatment
-# d$label[d$treatment == 'Blank'] <- '0'
-# d$label[d$treatment == 'H1'] <- '101'
-# d$label[d$treatment == 'D1'] <- '102'
-# d$label[d$treatment == 'H2'] <- '103'
-# d$label[d$treatment == 'D2'] <- '104'
-# d$label[d$treatment == 'H3'] <- '105'
-# d$label[d$treatment == 'D3'] <- '106'
-# d$label[d$treatment == 'C1'] <- '107'
-# d$label[d$treatment == 'C3'] <- '109'
-# d$label <- as.numeric(d$label)
-# 
-# d <- d %>% mutate(category = case_when(label == 0 ~ 'Blank',
-#                               label > 100 & treatment %in% ancestors.haploid ~ 'Ctrl.H',
-#                               label > 100 & treatment %in% ancestors.diploid ~ 'Ctrl.D',
-#                               label %% 2 == 0 ~ 'MA.D',
-#                               label %% 2 == 1 ~ 'MA.H'))
-# 
-# 
-# d <- d %>% mutate(category = ifelse(label %in% fake.diploids, 'MA.H', category))
-# d <- d %>% mutate(category = ifelse(label %in% fake.haploids, 'MA.D', category))
-# 
-# # Labeling the dates
-# dates <- d %>% distinct(date)
-# alphabet <- c('A', 'B', 'C', 'D', 'E')
-# dates <- dates %>% mutate(day = alphabet)
-# d <- d %>% left_join(dates, by='date') %>% select(-date)
+d$batch[d$date %in% dates.1] <- 1
+d$batch[d$date %in% dates.2] <- 2
+
+d <- d %>% filter(batch == 2)
+
+d$label <- d$treatment
+d$label[d$treatment == 'Blank'] <- '0'
+d$label[d$treatment == 'H1'] <- '101'
+d$label[d$treatment == 'D1'] <- '102'
+d$label[d$treatment == 'H2'] <- '103'
+d$label[d$treatment == 'D2'] <- '104'
+d$label[d$treatment == 'H3'] <- '105'
+d$label[d$treatment == 'D3'] <- '106'
+d$label[d$treatment == 'C1'] <- '107'
+d$label[d$treatment == 'C3'] <- '109'
+d$label <- as.numeric(d$label)
+
+d <- d %>% mutate(category = case_when(label == 0 ~ 'Blank',
+                              label > 100 & treatment %in% ancestors.haploid ~ 'Ctrl.H',
+                              label > 100 & treatment %in% ancestors.diploid ~ 'Ctrl.D',
+                              label %% 2 == 0 ~ 'MA.D',
+                              label %% 2 == 1 ~ 'MA.H'))
+
+
+d <- d %>% mutate(category = ifelse(label %in% fake.diploids, 'MA.H', category))
+d <- d %>% mutate(category = ifelse(label %in% fake.haploids, 'MA.D', category))
+
+# Labeling the dates
+dates <- d %>% distinct(date)
+alphabet <- c('A', 'B', 'C', 'D', 'E')
+dates <- dates %>% mutate(day = alphabet)
+d <- d %>% left_join(dates, by='date') %>% select(-date)
+
+head(d)
 ```
+
+    ##   well treatment      slope initial     final monotone time batch label
+    ## 1   A1     Blank 0.01190268 0.19525 0.2028966        0   17     2     0
+    ## 2   B1        D3 0.16205402 0.22850 0.6973506        0   62     2   106
+    ## 3   C1        H1 0.24591168 0.25875 0.9610287        0   31     2   101
+    ## 4   D1        H2 0.02848045 0.24225 0.2147241       72    8     2   103
+    ## 5   E1        H3 0.47864236 0.23025 1.0269483        9   22     2   105
+    ## 6   F1        D1 0.13472608 0.24650 0.5693218       15   62     2   102
+    ##   category day
+    ## 1    Blank   A
+    ## 2   Ctrl.H   A
+    ## 3   Ctrl.H   A
+    ## 4   Ctrl.H   A
+    ## 5   Ctrl.H   A
+    ## 6   Ctrl.D   A
 
 ### Additional information about the days
 
@@ -130,46 +196,53 @@ values to the dataset before trimming for reasonable values.
 # Preliminary exploration
 
 Plot ancestors across all days to visually check for day effects
+![](MA-Fitness-main_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
 
 Plotting the distribution of the slope values
 
 ``` r
-# # ci <- c(quantile(d$slope, 0.25) - 1.5* IQR(d$slope),
-# #         quantile(d$slope, 0.75) + 1.5* IQR(d$slope))
-# 
-# ci <- c(0.05, 0.22)
-# 
-# d %>% ggplot() +
-#   geom_density(aes(x=slope)) +
-#   geom_vline(xintercept = ci, color='red', linetype='dashed')
+# ci <- c(quantile(d$slope, 0.25) - 1.5* IQR(d$slope),
+        # quantile(d$slope, 0.75) + 1.5* IQR(d$slope))
+
+ci <- c(0.05, 0.22)
+
+d %>% ggplot() +
+  geom_density(aes(x=slope)) +
+  geom_vline(xintercept = ci, color='red', linetype='dashed')
 ```
 
-Defining the blanks by using a linear model to set a cutoff for the
-blanks which can then be used to remove the other outliers by predicting
-the blank values for every day.
+![](MA-Fitness-main_files/figure-gfm/unnamed-chunk-11-1.png)<!-- -->
 
 ``` r
-# blanks <-  d %>% filter(category == 'Blank')
+blanks <-  d %>% filter(category == 'Blank')
 ```
 
 visualize the blanks
+
+    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
+
+![](MA-Fitness-main_files/figure-gfm/unnamed-chunk-13-1.png)<!-- -->
 
 Setting cutoff for blanks around 0.05 and using the good blanks to make
 blank predictions for each day.
 
 ``` r
-# bad.blanks <- blanks %>% filter(slope > 0.05)
-# good.blanks <- blanks %>% filter(slope < 0.05)
-# 
-# model <- lmer(slope~(1|day), data = good.blanks)
-# dates.predict <- data.frame(date=distinct(d, day))
-# dates.predict$null = predict(model, dates.predict)
+bad.blanks <- blanks %>% filter(slope > 0.05)
+good.blanks <- blanks %>% filter(slope < 0.05)
+
+model <- lmer(slope~(1|day), data = good.blanks)
+dates.predict <- data.frame(date=distinct(d, day))
+dates.predict$null = predict(model, dates.predict)
 ```
 
 Checking for effects of time (time taken to attain maximum growth rate).
 Each time stamp is of 15 minutes.
 
 Plotting the low values of time
+
+    ## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
+
+![](MA-Fitness-main_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
 
 Samples with time \< 20 were identified to be erroneous. 20 timestamps
 (4 hours) was a reasonable cutoff since the samples beyond that were
@@ -189,15 +262,19 @@ unless there was an error.
 is too soon to reach saturation.
 
 ``` r
-# data <- d %>% 
-#   filter(slope > ci[1] & slope < ci[2]) %>%
-#   anti_join(bad.blanks) %>%
-#   filter(initial <= final) %>%
-#   filter(!(treatment %in% anc.hap.fake)) %>%
-#   filter(time > 20)
+data <- d %>%
+  filter(slope > ci[1] & slope < ci[2]) %>%
+  anti_join(bad.blanks) %>%
+  filter(initial <= final) %>%
+  filter(!(treatment %in% anc.hap.fake)) %>%
+  filter(time > 20)
 ```
 
+    ## Joining with `by = join_by(well, treatment, slope, initial, final, monotone,
+    ## time, batch, label, category, day)`
+
 Plotting the ancestors again
+![](MA-Fitness-main_files/figure-gfm/unnamed-chunk-17-1.png)<!-- -->![](MA-Fitness-main_files/figure-gfm/unnamed-chunk-17-2.png)<!-- -->
 
 ## Preparing for data analysis
 
