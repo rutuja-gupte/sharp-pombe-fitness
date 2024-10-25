@@ -42,9 +42,7 @@ def graph_df(df, red = []):
     for col in red:
         index = cols.index(col)
         ax[index//24][index%24].set_facecolor('xkcd:light pastel green')
-        
-#         if col in red:
-#             ax[index//24][index%24].set_facecolor('red')
+        ax[index//24][index%24].set_title(col)
 
 # inspect 4 wells
 def inspect_well(df, w1, w2, w3, w4):
