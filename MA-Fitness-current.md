@@ -333,6 +333,7 @@ data_trim <- data %>%
   
   ## This entire plate just looks awful. I don't think I can trust anything from that plate.
   filter(!(day=='2C')) %>%
+  filter(!(day=='2A')) %>%
   
   ## A slope higher that that would mean a much lower doubling time and there is no reason to believe anything would grow that fast
   filter(slope < 2.5)
@@ -436,12 +437,12 @@ head(df) # MA lines
     ## 5     H2 0.00380351 0.6811348 0.03173643  0.8835029   1.0176359     1  1A
     ## 6     H2 0.00530351 0.8506887 0.11785417  1.1898344   0.8148071     1  1A
     ##   category  ploidy   MA initial_scaled         w1        w2        w3
-    ## 1   Ctrl.H Haploid Ctrl      1.4253407 57.5046470 7.5831819 1.4753897
-    ## 2   Ctrl.H Haploid Ctrl      0.3069204  0.1151869 0.3393919 0.1693493
-    ## 3   Ctrl.H Haploid Ctrl      2.0728472  6.2324741 2.4964924 0.4908778
-    ## 4   Ctrl.H Haploid Ctrl      0.7778342  4.0081178 2.0020284 0.6019991
-    ## 5   Ctrl.H Haploid Ctrl      0.8955627 31.5095266 5.6133347 1.1318582
-    ## 6   Ctrl.H Haploid Ctrl      1.2487480  8.4850628 2.9129131 0.8404531
+    ## 1   Ctrl.H Haploid Ctrl      1.4227919 57.5046470 7.5831819 1.4753897
+    ## 2   Ctrl.H Haploid Ctrl      0.3063716  0.1151869 0.3393919 0.1693493
+    ## 3   Ctrl.H Haploid Ctrl      2.0691406  6.2324741 2.4964924 0.4908778
+    ## 4   Ctrl.H Haploid Ctrl      0.7764433  4.0081178 2.0020284 0.6019991
+    ## 5   Ctrl.H Haploid Ctrl      0.8939612 31.5095266 5.6133347 1.1318582
+    ## 6   Ctrl.H Haploid Ctrl      1.2465150  8.4850628 2.9129131 0.8404531
     ##           w4
     ## 1 2.17677483
     ## 2 0.02867919
@@ -449,6 +450,74 @@ head(df) # MA lines
     ## 4 0.36240290
     ## 5 1.28110310
     ## 6 0.70636142
+
+## Models!
+
+Testing for MA-ploidy interaction. I am testing out different kinds of
+weights here to see what works best.
+
+``` r
+null <- lmer(slope ~ MA + ploidy + initial_scaled + (1|day) + (1|lineid), df)
+full <- lmer(slope ~ MA * ploidy + initial_scaled + (1|day) + (1|lineid), df)
+summary(full)
+```
+
+    ## Linear mixed model fit by REML ['lmerMod']
+    ## Formula: slope ~ MA * ploidy + initial_scaled + (1 | day) + (1 | lineid)
+    ##    Data: df
+    ## 
+    ## REML criterion at convergence: 995.4
+    ## 
+    ## Scaled residuals: 
+    ##     Min      1Q  Median      3Q     Max 
+    ## -2.9791 -0.5522  0.0669  0.6954  2.4479 
+    ## 
+    ## Random effects:
+    ##  Groups   Name        Variance Std.Dev.
+    ##  lineid   (Intercept) 0.001733 0.04162 
+    ##  day      (Intercept) 0.072806 0.26983 
+    ##  Residual             0.191351 0.43744 
+    ## Number of obs: 803, groups:  lineid, 104; day, 6
+    ## 
+    ## Fixed effects:
+    ##                     Estimate Std. Error t value
+    ## (Intercept)         1.543608   0.139550  11.061
+    ## MAMA                0.278556   0.084817   3.284
+    ## ploidyHaploid       0.069805   0.094626   0.738
+    ## initial_scaled     -0.292806   0.034061  -8.596
+    ## MAMA:ploidyHaploid -0.006534   0.100775  -0.065
+    ## 
+    ## Correlation of Fixed Effects:
+    ##             (Intr) MAMA   pldyHp intl_s
+    ## MAMA        -0.543                     
+    ## ploidyHapld -0.500  0.843              
+    ## initil_scld -0.178 -0.076 -0.091       
+    ## MAMA:pldyHp  0.473 -0.859 -0.931  0.049
+
+``` r
+anova(null, full)
+```
+
+    ## refitting model(s) with ML (instead of REML)
+
+    ## Data: df
+    ## Models:
+    ## null: slope ~ MA + ploidy + initial_scaled + (1 | day) + (1 | lineid)
+    ## full: slope ~ MA * ploidy + initial_scaled + (1 | day) + (1 | lineid)
+    ##      npar    AIC    BIC  logLik deviance  Chisq Df Pr(>Chisq)
+    ## null    7 989.47 1022.3 -487.74   975.47                     
+    ## full    8 991.46 1029.0 -487.73   975.46 0.0125  1     0.9108
+
+Not significant. Initial_scaled looks like it could be significant. MA
+might be able to make it.
+
+Random effects:  
+Groups Name Variance Std.Dev.  
+lineid (Intercept) 0.001733 0.04162  
+day (Intercept) 0.072806 0.26983  
+Residual 0.191351 0.43744
+
+Now trying the weights
 
 ``` r
 null1 <- lmer(slope ~ MA + ploidy + initial + (1|day) + (1|lineid), df, weights=w1)
@@ -460,35 +529,34 @@ summary(null1)
     ##    Data: df
     ## Weights: w1
     ## 
-    ## REML criterion at convergence: 1699.7
+    ## REML criterion at convergence: 1532.8
     ## 
     ## Scaled residuals: 
     ##     Min      1Q  Median      3Q     Max 
-    ## -4.7532 -0.3933  0.1740  0.5770  5.1823 
+    ## -4.8240 -0.3788  0.1608  0.5696  5.3261 
     ## 
     ## Random effects:
     ##  Groups   Name        Variance Std.Dev.
-    ##  lineid   (Intercept) 0.03283  0.1812  
-    ##  day      (Intercept) 0.03756  0.1938  
-    ##  Residual             1.02959  1.0147  
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
+    ##  lineid   (Intercept) 0.03873  0.1968  
+    ##  day      (Intercept) 0.04635  0.2153  
+    ##  Residual             0.94716  0.9732  
+    ## Number of obs: 803, groups:  lineid, 104; day, 6
     ## 
     ## Fixed effects:
-    ##                Estimate Std. Error t value
-    ## (Intercept)     1.32765    0.13055  10.170
-    ## MAMA            0.50465    0.09926   5.084
-    ## ploidyHaploid   0.06963    0.05022   1.387
-    ## initial       -75.80587    7.63157  -9.933
+    ##                 Estimate Std. Error t value
+    ## (Intercept)      1.43816    0.14624   9.834
+    ## MAMA             0.48116    0.10752   4.475
+    ## ploidyHaploid    0.06595    0.05351   1.232
+    ## initial       -100.07010    7.97136 -12.554
     ## 
     ## Correlation of Fixed Effects:
     ##             (Intr) MAMA   pldyHp
-    ## MAMA        -0.747              
-    ## ploidyHapld -0.248  0.120       
-    ## initial     -0.273  0.057 -0.133
+    ## MAMA        -0.724              
+    ## ploidyHapld -0.249  0.127       
+    ## initial     -0.257  0.055 -0.110
 
 ``` r
 full1 <- lmer(slope ~ MA * ploidy + initial + (1|day) + (1|lineid), df, weights=w1)
-
 summary(full1)
 ```
 
@@ -497,33 +565,33 @@ summary(full1)
     ##    Data: df
     ## Weights: w1
     ## 
-    ## REML criterion at convergence: 1698.8
+    ## REML criterion at convergence: 1532.8
     ## 
     ## Scaled residuals: 
     ##     Min      1Q  Median      3Q     Max 
-    ## -4.7443 -0.3885  0.1716  0.5733  5.2011 
+    ## -4.8213 -0.3811  0.1620  0.5704  5.3362 
     ## 
     ## Random effects:
     ##  Groups   Name        Variance Std.Dev.
-    ##  lineid   (Intercept) 0.03210  0.1792  
-    ##  day      (Intercept) 0.03753  0.1937  
-    ##  Residual             1.02987  1.0148  
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
+    ##  lineid   (Intercept) 0.03878  0.1969  
+    ##  day      (Intercept) 0.04638  0.2154  
+    ##  Residual             0.94720  0.9732  
+    ## Number of obs: 803, groups:  lineid, 104; day, 6
     ## 
     ## Fixed effects:
     ##                    Estimate Std. Error t value
-    ## (Intercept)          1.5553     0.2076   7.493
-    ## MAMA                 0.2676     0.1954   1.370
-    ## ploidyHaploid       -0.2344     0.2222  -1.055
-    ## initial            -75.2567     7.6392  -9.851
-    ## MAMA:ploidyHaploid   0.3189     0.2270   1.405
+    ## (Intercept)          1.6103     0.2338   6.888
+    ## MAMA                 0.3021     0.2181   1.385
+    ## ploidyHaploid       -0.1616     0.2470  -0.654
+    ## initial            -99.5442     7.9913 -12.457
+    ## MAMA:ploidyHaploid   0.2377     0.2518   0.944
     ## 
     ## Correlation of Fixed Effects:
     ##             (Intr) MAMA   pldyHp initil
-    ## MAMA        -0.908                     
-    ## ploidyHapld -0.795  0.856              
-    ## initial     -0.129 -0.018 -0.083       
-    ## MAMA:pldyHp  0.780 -0.864 -0.974  0.054
+    ## MAMA        -0.902                     
+    ## ploidyHapld -0.795  0.863              
+    ## initial     -0.106 -0.033 -0.092       
+    ## MAMA:pldyHp  0.780 -0.870 -0.976  0.070
 
 ``` r
 anova(null1, full1)
@@ -536,48 +604,18 @@ anova(null1, full1)
     ## null1: slope ~ MA + ploidy + initial + (1 | day) + (1 | lineid)
     ## full1: slope ~ MA * ploidy + initial + (1 | day) + (1 | lineid)
     ##       npar    AIC    BIC  logLik deviance  Chisq Df Pr(>Chisq)
-    ## null1    7 1709.2 1742.8 -847.62   1695.2                     
-    ## full1    8 1709.2 1747.5 -846.59   1693.2 2.0477  1     0.1524
+    ## null1    7 1543.0 1575.8 -764.51   1529.0                     
+    ## full1    8 1544.1 1581.6 -764.05   1528.1 0.9316  1     0.3344
+
+Random effects:  
+Groups Name Variance Std.Dev.  
+lineid (Intercept) 0.03878 0.1969  
+day (Intercept) 0.04638 0.2154  
+Residual 0.94720 0.9732
 
 ``` r
 null2 <- lmer(slope ~ MA + ploidy + initial + (1|day) + (1|lineid), df, weights=w2)
-summary(null2)
-```
-
-    ## Linear mixed model fit by REML ['lmerMod']
-    ## Formula: slope ~ MA + ploidy + initial + (1 | day) + (1 | lineid)
-    ##    Data: df
-    ## Weights: w2
-    ## 
-    ## REML criterion at convergence: 1288
-    ## 
-    ## Scaled residuals: 
-    ##     Min      1Q  Median      3Q     Max 
-    ## -3.6707 -0.4838  0.1759  0.6690  3.7250 
-    ## 
-    ## Random effects:
-    ##  Groups   Name        Variance Std.Dev.
-    ##  lineid   (Intercept) 0.007167 0.08466 
-    ##  day      (Intercept) 0.048926 0.22119 
-    ##  Residual             0.403176 0.63496 
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
-    ## 
-    ## Fixed effects:
-    ##                Estimate Std. Error t value
-    ## (Intercept)     1.43118    0.10718  13.353
-    ## MAMA            0.37817    0.05655   6.687
-    ## ploidyHaploid   0.07964    0.03769   2.113
-    ## initial       -68.54276    7.67990  -8.925
-    ## 
-    ## Correlation of Fixed Effects:
-    ##             (Intr) MAMA   pldyHp
-    ## MAMA        -0.502              
-    ## ploidyHapld -0.209  0.162       
-    ## initial     -0.297  0.036 -0.158
-
-``` r
 full2 <- lmer(slope ~ MA * ploidy + initial + (1|day) + (1|lineid), df, weights=w2)
-
 summary(full2)
 ```
 
@@ -586,33 +624,33 @@ summary(full2)
     ##    Data: df
     ## Weights: w2
     ## 
-    ## REML criterion at convergence: 1288.3
+    ## REML criterion at convergence: 1144.3
     ## 
     ## Scaled residuals: 
     ##     Min      1Q  Median      3Q     Max 
-    ## -3.7197 -0.4709  0.1774  0.6689  3.7651 
+    ## -3.5957 -0.4912  0.1525  0.6616  3.9616 
     ## 
     ## Random effects:
     ##  Groups   Name        Variance Std.Dev.
-    ##  lineid   (Intercept) 0.006792 0.08241 
-    ##  day      (Intercept) 0.048920 0.22118 
-    ##  Residual             0.403217 0.63499 
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
+    ##  lineid   (Intercept) 0.009831 0.09915 
+    ##  day      (Intercept) 0.062250 0.24950 
+    ##  Residual             0.376842 0.61387 
+    ## Number of obs: 803, groups:  lineid, 104; day, 6
     ## 
     ## Fixed effects:
     ##                     Estimate Std. Error t value
-    ## (Intercept)          1.55180    0.13616  11.397
-    ## MAMA                 0.24806    0.10702   2.318
-    ## ploidyHaploid       -0.08524    0.12190  -0.699
-    ## initial            -67.93073    7.68826  -8.836
-    ## MAMA:ploidyHaploid   0.18016    0.12686   1.420
+    ## (Intercept)          1.58666    0.16330   9.716
+    ## MAMA                 0.29506    0.12759   2.312
+    ## ploidyHaploid       -0.04731    0.14396  -0.329
+    ## initial            -89.55433    7.96806 -11.239
+    ## MAMA:ploidyHaploid   0.13431    0.14862   0.904
     ## 
     ## Correlation of Fixed Effects:
     ##             (Intr) MAMA   pldyHp initil
-    ## MAMA        -0.733                     
-    ## ploidyHapld -0.641  0.839              
-    ## initial     -0.197 -0.030 -0.104       
-    ## MAMA:pldyHp  0.621 -0.854 -0.952  0.058
+    ## MAMA        -0.737                     
+    ## ploidyHapld -0.655  0.857              
+    ## initial     -0.156 -0.049 -0.107       
+    ## MAMA:pldyHp  0.636 -0.868 -0.960  0.073
 
 ``` r
 anova(null2, full2)
@@ -624,49 +662,19 @@ anova(null2, full2)
     ## Models:
     ## null2: slope ~ MA + ploidy + initial + (1 | day) + (1 | lineid)
     ## full2: slope ~ MA * ploidy + initial + (1 | day) + (1 | lineid)
-    ##       npar    AIC    BIC  logLik deviance Chisq Df Pr(>Chisq)
-    ## null2    7 1296.1 1329.6 -641.03   1282.1                    
-    ## full2    8 1295.9 1334.2 -639.96   1279.9 2.142  1     0.1433
+    ##       npar    AIC    BIC  logLik deviance  Chisq Df Pr(>Chisq)
+    ## null2    7 1152.0 1184.8 -568.98   1138.0                     
+    ## full2    8 1153.1 1190.6 -568.54   1137.1 0.8784  1     0.3486
+
+Random effects:  
+Groups Name Variance Std.Dev.  
+lineid (Intercept) 0.009831 0.09915  
+day (Intercept) 0.062250 0.24950  
+Residual 0.376842 0.61387
 
 ``` r
 null3 <- lmer(slope ~ MA + ploidy + initial + (1|day) + (1|lineid), df, weights=w3)
-summary(null3)
-```
-
-    ## Linear mixed model fit by REML ['lmerMod']
-    ## Formula: slope ~ MA + ploidy + initial + (1 | day) + (1 | lineid)
-    ##    Data: df
-    ## Weights: w3
-    ## 
-    ## REML criterion at convergence: 1191
-    ## 
-    ## Scaled residuals: 
-    ##     Min      1Q  Median      3Q     Max 
-    ## -3.7141 -0.5744  0.0797  0.6602  3.5762 
-    ## 
-    ## Random effects:
-    ##  Groups   Name        Variance Std.Dev.
-    ##  lineid   (Intercept) 0.005697 0.07548 
-    ##  day      (Intercept) 0.046665 0.21602 
-    ##  Residual             0.104628 0.32346 
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
-    ## 
-    ## Fixed effects:
-    ##                Estimate Std. Error t value
-    ## (Intercept)     1.47378    0.10321  14.280
-    ## MAMA            0.34457    0.05255   6.557
-    ## ploidyHaploid   0.06102    0.03578   1.705
-    ## initial       -57.98925    7.89474  -7.345
-    ## 
-    ## Correlation of Fixed Effects:
-    ##             (Intr) MAMA   pldyHp
-    ## MAMA        -0.479              
-    ## ploidyHapld -0.203  0.170       
-    ## initial     -0.300  0.015 -0.161
-
-``` r
 full3 <- lmer(slope ~ MA * ploidy + initial + (1|day) + (1|lineid), df, weights=w3)
-
 summary(full3)
 ```
 
@@ -675,33 +683,33 @@ summary(full3)
     ##    Data: df
     ## Weights: w3
     ## 
-    ## REML criterion at convergence: 1192.4
+    ## REML criterion at convergence: 1062.5
     ## 
     ## Scaled residuals: 
     ##     Min      1Q  Median      3Q     Max 
-    ## -3.7335 -0.5755  0.0808  0.6477  3.6033 
+    ## -3.5996 -0.5912  0.0538  0.6437  3.8319 
     ## 
     ## Random effects:
     ##  Groups   Name        Variance Std.Dev.
-    ##  lineid   (Intercept) 0.00580  0.07615 
-    ##  day      (Intercept) 0.04682  0.21637 
-    ##  Residual             0.10458  0.32339 
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
+    ##  lineid   (Intercept) 0.007972 0.08929 
+    ##  day      (Intercept) 0.060650 0.24627 
+    ##  Residual             0.099760 0.31585 
+    ## Number of obs: 803, groups:  lineid, 104; day, 6
     ## 
     ## Fixed effects:
     ##                     Estimate Std. Error t value
-    ## (Intercept)          1.55429    0.13059  11.902
-    ## MAMA                 0.25749    0.10107   2.548
-    ## ploidyHaploid       -0.04961    0.11510  -0.431
-    ## initial            -57.64183    7.90205  -7.295
-    ## MAMA:ploidyHaploid   0.12134    0.11994   1.012
+    ## (Intercept)          1.58574    0.15619  10.153
+    ## MAMA                 0.30291    0.11902   2.545
+    ## ploidyHaploid       -0.02333    0.13412  -0.174
+    ## initial            -77.83046    8.24403  -9.441
+    ## MAMA:ploidyHaploid   0.08867    0.13866   0.639
     ## 
     ## Correlation of Fixed Effects:
     ##             (Intr) MAMA   pldyHp initil
-    ## MAMA        -0.719                     
-    ## ploidyHapld -0.630  0.838              
-    ## initial     -0.211 -0.029 -0.092       
-    ## MAMA:pldyHp  0.610 -0.853 -0.950  0.044
+    ## MAMA        -0.717                     
+    ## ploidyHapld -0.639  0.857              
+    ## initial     -0.171 -0.046 -0.094       
+    ## MAMA:pldyHp  0.620 -0.868 -0.959  0.058
 
 ``` r
 anova(null3, full3)
@@ -714,46 +722,18 @@ anova(null3, full3)
     ## null3: slope ~ MA + ploidy + initial + (1 | day) + (1 | lineid)
     ## full3: slope ~ MA * ploidy + initial + (1 | day) + (1 | lineid)
     ##       npar    AIC    BIC  logLik deviance  Chisq Df Pr(>Chisq)
-    ## null3    7 1198.8 1232.3 -592.39   1184.8                     
-    ## full3    8 1199.7 1238.0 -591.85   1183.7 1.0882  1     0.2969
+    ## null3    7 1069.4 1102.2 -527.70   1055.4                     
+    ## full3    8 1071.0 1108.5 -527.48   1055.0 0.4337  1     0.5102
+
+Random effects:  
+Groups Name Variance Std.Dev.  
+lineid (Intercept) 0.007972 0.08929  
+day (Intercept) 0.060650 0.24627  
+Residual 0.099760 0.31585
 
 ``` r
-null4 <- lmer(slope ~ MA + ploidy + initial + (1|day) + (1|lineid), df)
-summary(null4)
-```
-
-    ## Linear mixed model fit by REML ['lmerMod']
-    ## Formula: slope ~ MA + ploidy + initial + (1 | day) + (1 | lineid)
-    ##    Data: df
-    ## 
-    ## REML criterion at convergence: 1112.7
-    ## 
-    ## Scaled residuals: 
-    ##     Min      1Q  Median      3Q     Max 
-    ## -3.1895 -0.5749  0.0803  0.6925  2.5262 
-    ## 
-    ## Random effects:
-    ##  Groups   Name        Variance  Std.Dev.
-    ##  lineid   (Intercept) 0.0001373 0.01172 
-    ##  day      (Intercept) 0.0569575 0.23866 
-    ##  Residual             0.1982765 0.44528 
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
-    ## 
-    ## Fixed effects:
-    ##                Estimate Std. Error t value
-    ## (Intercept)     1.53066    0.10199  15.008
-    ## MAMA            0.22924    0.03615   6.342
-    ## ploidyHaploid   0.06704    0.03199   2.096
-    ## initial       -51.84161    7.70871  -6.725
-    ## 
-    ## Correlation of Fixed Effects:
-    ##             (Intr) MAMA   pldyHp
-    ## MAMA        -0.288              
-    ## ploidyHapld -0.185  0.227       
-    ## initial     -0.271 -0.054 -0.149
-
-``` r
-full4 <- lmer(slope ~ MA * ploidy + initial + (1|day) + (1|lineid), df)
+null4 <- lmer(slope ~ MA + ploidy + initial + (1|day) + (1|lineid), df, weights=w4)
+full4 <- lmer(slope ~ MA * ploidy + initial + (1|day) + (1|lineid), df, weights=w4)
 
 summary(full4)
 ```
@@ -761,34 +741,35 @@ summary(full4)
     ## Linear mixed model fit by REML ['lmerMod']
     ## Formula: slope ~ MA * ploidy + initial + (1 | day) + (1 | lineid)
     ##    Data: df
+    ## Weights: w4
     ## 
-    ## REML criterion at convergence: 1115.9
+    ## REML criterion at convergence: 1352.3
     ## 
     ## Scaled residuals: 
     ##     Min      1Q  Median      3Q     Max 
-    ## -3.1861 -0.5740  0.0745  0.6895  2.5593 
+    ## -4.4970 -0.4998  0.0780  0.5688  5.1248 
     ## 
     ## Random effects:
-    ##  Groups   Name        Variance  Std.Dev.
-    ##  lineid   (Intercept) 0.0005647 0.02376 
-    ##  day      (Intercept) 0.0569887 0.23872 
-    ##  Residual             0.1981341 0.44512 
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
+    ##  Groups   Name        Variance Std.Dev.
+    ##  lineid   (Intercept) 0.02916  0.1708  
+    ##  day      (Intercept) 0.05301  0.2302  
+    ##  Residual             0.06524  0.2554  
+    ## Number of obs: 803, groups:  lineid, 104; day, 6
     ## 
     ## Fixed effects:
-    ##                     Estimate Std. Error t value
-    ## (Intercept)          1.53332    0.11392  13.460
-    ## MAMA                 0.22632    0.06842   3.308
-    ## ploidyHaploid        0.06154    0.07699   0.799
-    ## initial            -51.84470    7.71931  -6.716
-    ## MAMA:ploidyHaploid   0.00618    0.08385   0.074
+    ##                    Estimate Std. Error t value
+    ## (Intercept)          1.6306     0.2148   7.592
+    ## MAMA                 0.3057     0.1937   1.578
+    ## ploidyHaploid       -0.1265     0.2190  -0.577
+    ## initial            -84.9002     8.7297  -9.725
+    ## MAMA:ploidyHaploid   0.1678     0.2235   0.751
     ## 
     ## Correlation of Fixed Effects:
     ##             (Intr) MAMA   pldyHp initil
-    ## MAMA        -0.513                     
-    ## ploidyHapld -0.465  0.808              
-    ## initial     -0.226 -0.061 -0.096       
-    ## MAMA:pldyHp  0.434 -0.834 -0.907  0.038
+    ## MAMA        -0.871                     
+    ## ploidyHapld -0.768  0.864              
+    ## initial     -0.136 -0.028 -0.077       
+    ## MAMA:pldyHp  0.754 -0.871 -0.975  0.053
 
 ``` r
 anova(null4, full4)
@@ -801,8 +782,21 @@ anova(null4, full4)
     ## null4: slope ~ MA + ploidy + initial + (1 | day) + (1 | lineid)
     ## full4: slope ~ MA * ploidy + initial + (1 | day) + (1 | lineid)
     ##       npar    AIC    BIC  logLik deviance  Chisq Df Pr(>Chisq)
-    ## null4    7 1119.7 1153.2 -552.84   1105.7                     
-    ## full4    8 1121.7 1160.0 -552.83   1105.7 0.0011  1      0.974
+    ## null4    7 1361.8 1394.6 -673.89   1347.8                     
+    ## full4    8 1363.2 1400.7 -673.60   1347.2 0.5902  1     0.4423
+
+Random effects:  
+Groups Name Variance Std.Dev.  
+lineid (Intercept) 0.02916 0.1708  
+day (Intercept) 0.05301 0.2302  
+Residual 0.06524 0.2554
+
+Adding weights increased the variance for lineid and day. Reduced the
+residual values.
+
+# Stop here for now
+
+------------------------------------------------------------------------
 
 ``` r
 null <- lmer(slope ~ 1 + ploidy + (1|day) + (1|lineid), df, weights=)
@@ -813,35 +807,30 @@ summary(null)
     ## Formula: slope ~ 1 + ploidy + (1 | day) + (1 | lineid)
     ##    Data: df
     ## 
-    ## REML criterion at convergence: 1178.7
+    ## REML criterion at convergence: 1075
     ## 
     ## Scaled residuals: 
     ##      Min       1Q   Median       3Q      Max 
-    ## -3.02276 -0.50731  0.07233  0.68116  2.18925 
+    ## -3.04886 -0.49109  0.07919  0.66892  2.09720 
     ## 
     ## Random effects:
     ##  Groups   Name        Variance Std.Dev.
-    ##  lineid   (Intercept) 0.008266 0.09092 
-    ##  day      (Intercept) 0.040457 0.20114 
-    ##  Residual             0.207117 0.45510 
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
+    ##  lineid   (Intercept) 0.01048  0.1024  
+    ##  day      (Intercept) 0.04696  0.2167  
+    ##  Residual             0.20816  0.4562  
+    ## Number of obs: 803, groups:  lineid, 104; day, 6
     ## 
     ## Fixed effects:
     ##               Estimate Std. Error t value
-    ## (Intercept)    1.54555    0.08095  19.092
-    ## ploidyHaploid  0.01268    0.03788   0.335
+    ## (Intercept)   1.539550   0.093414   16.48
+    ## ploidyHaploid 0.002844   0.040512    0.07
     ## 
     ## Correlation of Fixed Effects:
     ##             (Intr)
-    ## ploidyHapld -0.241
+    ## ploidyHapld -0.226
 
 ``` r
 yay <- lmer(slope ~ MA + ploidy + (1|day) + (1|lineid), df) 
-```
-
-    ## boundary (singular) fit: see help('isSingular')
-
-``` r
 summary(yay)
 ```
 
@@ -849,31 +838,29 @@ summary(yay)
     ## Formula: slope ~ MA + ploidy + (1 | day) + (1 | lineid)
     ##    Data: df
     ## 
-    ## REML criterion at convergence: 1162.5
+    ## REML criterion at convergence: 1058
     ## 
     ## Scaled residuals: 
     ##      Min       1Q   Median       3Q      Max 
-    ## -3.03909 -0.53919  0.06491  0.68476  2.10946 
+    ## -3.05557 -0.53860  0.08046  0.67819  2.11130 
     ## 
     ## Random effects:
-    ##  Groups   Name        Variance Std.Dev.
-    ##  lineid   (Intercept) 0.00000  0.0000  
-    ##  day      (Intercept) 0.04225  0.2055  
-    ##  Residual             0.20870  0.4568  
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
+    ##  Groups   Name        Variance  Std.Dev.
+    ##  lineid   (Intercept) 0.0008531 0.02921 
+    ##  day      (Intercept) 0.0489390 0.22122 
+    ##  Residual             0.2099121 0.45816 
+    ## Number of obs: 803, groups:  lineid, 104; day, 6
     ## 
     ## Fixed effects:
     ##               Estimate Std. Error t value
-    ## (Intercept)    1.34560    0.08701  15.465
-    ## MAMA           0.21506    0.03648   5.896
-    ## ploidyHaploid  0.03493    0.03227   1.082
+    ## (Intercept)    1.30798    0.10135  12.906
+    ## MAMA           0.24656    0.04211   5.855
+    ## ploidyHaploid  0.02702    0.03515   0.769
     ## 
     ## Correlation of Fixed Effects:
     ##             (Intr) MAMA  
-    ## MAMA        -0.357       
-    ## ploidyHapld -0.273  0.223
-    ## optimizer (nloptwrap) convergence code: 0 (OK)
-    ## boundary (singular) fit: see help('isSingular')
+    ## MAMA        -0.373       
+    ## ploidyHapld -0.272  0.239
 
 ``` r
 anova(null, yay)
@@ -886,8 +873,8 @@ anova(null, yay)
     ## null: slope ~ 1 + ploidy + (1 | day) + (1 | lineid)
     ## yay: slope ~ MA + ploidy + (1 | day) + (1 | lineid)
     ##      npar    AIC    BIC  logLik deviance  Chisq Df Pr(>Chisq)    
-    ## null    5 1180.7 1204.6 -585.33   1170.7                         
-    ## yay     6 1161.3 1190.1 -574.66   1149.3 21.342  1  3.842e-06 ***
+    ## null    5 1077.4 1100.8 -533.69   1067.4                         
+    ## yay     6 1057.5 1085.7 -522.77   1045.5 21.844  1  2.957e-06 ***
     ## ---
     ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
@@ -902,31 +889,31 @@ summary(full)
     ## Formula: slope ~ MA + ploidy + initial + (1 | day) + (1 | lineid)
     ##    Data: df
     ## 
-    ## REML criterion at convergence: 1112.7
+    ## REML criterion at convergence: 981.7
     ## 
     ## Scaled residuals: 
-    ##     Min      1Q  Median      3Q     Max 
-    ## -3.1895 -0.5749  0.0803  0.6925  2.5262 
+    ##      Min       1Q   Median       3Q      Max 
+    ## -2.98280 -0.55689  0.06837  0.69633  2.45843 
     ## 
     ## Random effects:
-    ##  Groups   Name        Variance  Std.Dev.
-    ##  lineid   (Intercept) 0.0001373 0.01172 
-    ##  day      (Intercept) 0.0569575 0.23866 
-    ##  Residual             0.1982765 0.44528 
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
+    ##  Groups   Name        Variance Std.Dev.
+    ##  lineid   (Intercept) 0.001278 0.03575 
+    ##  day      (Intercept) 0.072846 0.26990 
+    ##  Residual             0.191481 0.43759 
+    ## Number of obs: 803, groups:  lineid, 104; day, 6
     ## 
     ## Fixed effects:
     ##                Estimate Std. Error t value
-    ## (Intercept)     1.53066    0.10199  15.008
-    ## MAMA            0.22924    0.03615   6.342
-    ## ploidyHaploid   0.06704    0.03199   2.096
-    ## initial       -51.84161    7.70871  -6.725
+    ## (Intercept)     1.54843    0.12249  12.641
+    ## MAMA            0.27305    0.04196   6.508
+    ## ploidyHaploid   0.06424    0.03428   1.874
+    ## initial       -68.75825    7.99068  -8.605
     ## 
     ## Correlation of Fixed Effects:
     ##             (Intr) MAMA   pldyHp
-    ## MAMA        -0.288              
-    ## ploidyHapld -0.185  0.227       
-    ## initial     -0.271 -0.054 -0.149
+    ## MAMA        -0.292              
+    ## ploidyHapld -0.186  0.238       
+    ## initial     -0.230 -0.069 -0.126
 
 ``` r
 anova(null, full)
@@ -939,8 +926,8 @@ anova(null, full)
     ## null: slope ~ MA + 1 + initial + (1 | day) + (1 | lineid)
     ## full: slope ~ MA + ploidy + initial + (1 | day) + (1 | lineid)
     ##      npar    AIC    BIC  logLik deviance  Chisq Df Pr(>Chisq)  
-    ## null    6 1122.1 1150.8 -555.03   1110.1                       
-    ## full    7 1119.7 1153.2 -552.84   1105.7 4.3992  1    0.03596 *
+    ## null    6 991.04 1019.2 -489.52   979.04                       
+    ## full    7 989.47 1022.3 -487.74   975.47 3.5708  1     0.0588 .
     ## ---
     ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
@@ -956,7 +943,11 @@ anova(null, full)
 ``` r
 null <- lmer(initial ~ ploidy + MA + (1|day) + (1|lineid), df)
 full <- lmer(initial ~ ploidy * MA + (1|day) + (1|lineid), df)
+```
 
+    ## boundary (singular) fit: see help('isSingular')
+
+``` r
 summary(null)
 ```
 
@@ -964,29 +955,29 @@ summary(null)
     ## Formula: initial ~ ploidy + MA + (1 | day) + (1 | lineid)
     ##    Data: df
     ## 
-    ## REML criterion at convergence: -8513.4
+    ## REML criterion at convergence: -7685.2
     ## 
     ## Scaled residuals: 
     ##     Min      1Q  Median      3Q     Max 
-    ## -2.2745 -0.7414 -0.1155  0.5613  3.5686 
+    ## -2.2713 -0.7317 -0.1319  0.5570  3.5342 
     ## 
     ## Random effects:
     ##  Groups   Name        Variance  Std.Dev. 
-    ##  lineid   (Intercept) 2.218e-08 0.0001489
-    ##  day      (Intercept) 6.001e-07 0.0007747
-    ##  Residual             3.760e-06 0.0019389
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
+    ##  lineid   (Intercept) 3.840e-08 0.0001960
+    ##  day      (Intercept) 7.233e-07 0.0008505
+    ##  Residual             3.749e-06 0.0019362
+    ## Number of obs: 803, groups:  lineid, 104; day, 6
     ## 
     ## Fixed effects:
     ##                Estimate Std. Error t value
-    ## (Intercept)   0.0035996  0.0003464  10.391
-    ## ploidyHaploid 0.0006022  0.0001425   4.226
-    ## MAMA          0.0002500  0.0001735   1.441
+    ## (Intercept)   0.0035287  0.0004060   8.692
+    ## ploidyHaploid 0.0005319  0.0001529   3.480
+    ## MAMA          0.0003583  0.0001946   1.841
     ## 
     ## Correlation of Fixed Effects:
     ##             (Intr) pldyHp
-    ## ploidyHapld -0.303       
-    ## MAMA        -0.441  0.209
+    ## ploidyHapld -0.293       
+    ## MAMA        -0.437  0.222
 
 ``` r
 summary(full)
@@ -996,31 +987,33 @@ summary(full)
     ## Formula: initial ~ ploidy * MA + (1 | day) + (1 | lineid)
     ##    Data: df
     ## 
-    ## REML criterion at convergence: -8500.6
+    ## REML criterion at convergence: -7673.6
     ## 
     ## Scaled residuals: 
     ##     Min      1Q  Median      3Q     Max 
-    ## -2.2484 -0.7326 -0.1257  0.5744  3.5482 
+    ## -2.2466 -0.7254 -0.1317  0.5564  3.5221 
     ## 
     ## Random effects:
-    ##  Groups   Name        Variance  Std.Dev. 
-    ##  lineid   (Intercept) 1.236e-08 0.0001112
-    ##  day      (Intercept) 5.995e-07 0.0007743
-    ##  Residual             3.767e-06 0.0019408
-    ## Number of obs: 889, groups:  lineid, 104; day, 7
+    ##  Groups   Name        Variance  Std.Dev.
+    ##  lineid   (Intercept) 0.000e+00 0.000000
+    ##  day      (Intercept) 7.191e-07 0.000848
+    ##  Residual             3.776e-06 0.001943
+    ## Number of obs: 803, groups:  lineid, 104; day, 6
     ## 
     ## Fixed effects:
     ##                      Estimate Std. Error t value
-    ## (Intercept)         0.0033454  0.0004079   8.202
-    ## ploidyHaploid       0.0009551  0.0003370   2.834
-    ## MAMA                0.0005332  0.0003003   1.775
-    ## ploidyHaploid:MAMA -0.0004157  0.0003681  -1.129
+    ## (Intercept)         0.0031113  0.0004668   6.665
+    ## ploidyHaploid       0.0010798  0.0003583   3.014
+    ## MAMA                0.0008064  0.0003256   2.477
+    ## ploidyHaploid:MAMA -0.0006226  0.0003895  -1.598
     ## 
     ## Correlation of Fixed Effects:
     ##             (Intr) pldyHp MAMA  
-    ## ploidyHapld -0.600              
-    ## MAMA        -0.649  0.808       
-    ## pldyHp:MAMA  0.545 -0.909 -0.834
+    ## ploidyHapld -0.597              
+    ## MAMA        -0.629  0.838       
+    ## pldyHp:MAMA  0.544 -0.913 -0.859
+    ## optimizer (nloptwrap) convergence code: 0 (OK)
+    ## boundary (singular) fit: see help('isSingular')
 
 ``` r
 anova(null, full)
@@ -1033,8 +1026,8 @@ anova(null, full)
     ## null: initial ~ ploidy + MA + (1 | day) + (1 | lineid)
     ## full: initial ~ ploidy * MA + (1 | day) + (1 | lineid)
     ##      npar     AIC     BIC logLik deviance  Chisq Df Pr(>Chisq)
-    ## null    6 -8547.4 -8518.6 4279.7  -8559.4                     
-    ## full    7 -8546.9 -8513.3 4280.4  -8560.9 1.5221  1     0.2173
+    ## null    6 -7718.5 -7690.4 3865.3  -7730.5                     
+    ## full    7 -7719.1 -7686.3 3866.5  -7733.1 2.5618  1     0.1095
 
 There was a nice model up there. Time to check its assumptions.
 
@@ -1042,22 +1035,22 @@ There was a nice model up there. Time to check its assumptions.
 plot(fitted(yay),resid(yay))
 ```
 
-![](MA-Fitness-current_files/figure-gfm/unnamed-chunk-20-1.png)<!-- -->
+![](MA-Fitness-current_files/figure-gfm/unnamed-chunk-21-1.png)<!-- -->
 
 ``` r
 plot(resid(yay),df$slope)
 ```
 
-![](MA-Fitness-current_files/figure-gfm/unnamed-chunk-20-2.png)<!-- -->
+![](MA-Fitness-current_files/figure-gfm/unnamed-chunk-21-2.png)<!-- -->
 
 ``` r
 plot(yay)
 ```
 
-![](MA-Fitness-current_files/figure-gfm/unnamed-chunk-20-3.png)<!-- -->
+![](MA-Fitness-current_files/figure-gfm/unnamed-chunk-21-3.png)<!-- -->
 
 ``` r
 qqmath(yay, id=0.05)
 ```
 
-![](MA-Fitness-current_files/figure-gfm/unnamed-chunk-20-4.png)<!-- -->
+![](MA-Fitness-current_files/figure-gfm/unnamed-chunk-21-4.png)<!-- -->
