@@ -6,27 +6,34 @@ Rutuja
 Analysis functions
 
 ``` r
+## Calculate the maximum slope of fitted splines
 spline.slope<-function(x, y, n=101, eps=1e-5, span=0.075){
   max(nderiv(loess(log(y) ~ x, degree=1, span=span), x), na.rm=TRUE)}
   
+## Fits the splines
 nderiv <- function(fit, x, eps=1e-5){
   (predict(fit, x + eps) - predict(fit, x - eps))/(2 * eps)}
 
+## Calculates the sum of squared residuals from loess smoothing
 loess.resid <- function(x, y, n=101, span=0.2){
     k <- loess(log(y) ~ x, degree=1, span=span)
     return(sum(k$residuals^2))
 }
 
+## Calculates the absolute sum of residuals from loess smoothing
 loess.resid.v2 <- function(x, y, n=101, span=0.2){
     k <- loess(log(y) ~ x, degree=1, span=span)
     return(sum(abs(k$residuals)))
 }
 ```
 
+Spline span considerations: If the span is too low, then the model has
+issues fitting. If the span is too high, we smooth too much.
+
 ``` r
 folder <-"data/"
 l <- list.files(folder)
-span = 0.075
+span = 0.075   ## set arbitrarily based on data
 
 dfs <- lapply(l[endsWith(l, '.csv')], function(r){
   d <- read.csv(paste0(folder,r))
@@ -57,17 +64,26 @@ dfs <- lapply(l[endsWith(l, '.csv')], function(r){
   ## Subtracting the blanks
 
   blanks <- d[d$treatment == "Blank",]
+  
   ## Find the good blanks
   good.blanks <- blanks %>% filter(final - initial < 0.05)
   blank.wells <- good.blanks$well
+  
   ## Find the blank value for that day
   blank.val <- mean(unlist(assay.data[, blank.wells]), na.rm=TRUE)
   d$blank.val <- blank.val
-  blank.var <- sd(unlist(assay.data[, blank.wells]), na.rm=TRUE)
-  d$blank.var <- sd(unlist(assay.data[, blank.wells]), na.rm=TRUE)
+  ## storing the standard deviation of the blanks
+  blank.sd <- sd(unlist(assay.data[, blank.wells]), na.rm=TRUE)
+  d$blank.sd <- sd(unlist(assay.data[, blank.wells]), na.rm=TRUE)
   testcols <- colnames(assay.data)
+  
   assay.data <- bind_cols(assay.data[,1:2], data.frame(sapply(c(1:nrow(d)), function(r){
+    ## Actually subtract the blanks from everybody else.
+    ## Maybe add something to put in some tolerance for the just below blank values
+    ## The only thing I can think of is adding in 1 sd values (or half sd if I am thinking half here half there)
     temp <- (assay.data[,which(names(assay.data)==d$well[r])]-blank.val)
+    
+    ## We are dealing with log values, so we cannot have anything negative (also that would be funny to think of since OD represents the cell density,)
     temp <- replace(temp, which(temp<=0), NA)
     temp
     })))
@@ -85,6 +101,7 @@ dfs <- lapply(l[endsWith(l, '.csv')], function(r){
   })
 
   ## Check and note the final OD
+  ## Being a little generous about what final means
 
   d$final <- sapply(c(1:nrow(d)), function(r){
     temp <- assay.data[,which(names(assay.data)==d$well[r])]
@@ -95,6 +112,7 @@ dfs <- lapply(l[endsWith(l, '.csv')], function(r){
   })
   
   ### Using kind of the same template to calculate the final slope
+  ## Doesnt have to be too accurate. I am literally putting a secant through the data for the last hour.
 
   d$final.slope <- sapply(c(1:nrow(d)), function(r){
     temp <- assay.data[,which(names(assay.data)==d$well[r])]
@@ -114,6 +132,8 @@ dfs <- lapply(l[endsWith(l, '.csv')], function(r){
     else spline.slope(assay.data$Time, y, span=span)
   })
   
+  ## this is where I do the residuals for loess fits calculations
+  
   d$resids <-  sapply(c(1:nrow(d)), function(r){
     y = assay.data[,which(names(assay.data)==d$well[r])]
     if (sum(is.na(y)) >= (length(y)-64)) {
@@ -127,9 +147,11 @@ dfs <- lapply(l[endsWith(l, '.csv')], function(r){
       return(NA)}
     else loess.resid.v2(assay.data$Time, y, span=span)
   })
+  
    d$double_time <- log(2)/d$slope
    
    ## Populations should not go down, at least that is the hope!
+   ## I am calculating the derivatives (with loess ftting) to be a little generous about some jitter in the data
    
    d$monotone <- sapply(c(1:nrow(d)), function(r){
     y = assay.data[,which(names(assay.data)==d$well[r])]
@@ -142,6 +164,8 @@ dfs <- lapply(l[endsWith(l, '.csv')], function(r){
    #   y = assay.data[,which(names(assay.data)==d$well[r])]
    #   sum(diff(y)<0,na.rm=TRUE)<=15
    # })
+   
+   ## There should not be any sudden changes in OD. Put this one in so I can filter for drastic ups and downs later. Basically calculates the variance in OD changes
    
    d$OD.var <- sapply(c(1:nrow(d)), function(r){
      y = assay.data[,which(names(assay.data)==d$well[r])]
@@ -156,7 +180,7 @@ d <- do.call("rbind", dfs)
 head(d)
 ```
 
-    ##   well treatment       date      initial     final blank.val  blank.var
+    ##   well treatment       date      initial     final blank.val   blank.sd
     ## 1   A1     Blank 2023-04-06           NA        NA 0.1799465 0.01301512
     ## 2   B1        H1 2023-04-06 0.0020535098 0.7116785 0.1799465 0.01301512
     ## 3   C1        H2 2023-04-06 0.0020535098 0.7609285 0.1799465 0.01301512
@@ -176,6 +200,8 @@ dates.1 <- seq(mdy(04062023), mdy(04102023), 1)
 dates.2 <- seq(mdy(04282023), mdy(11302023), 1)
 dates.3 <- c(mdy(11022023))
 ancestors <- c('H1', 'H2', 'H3', 'D1', 'C1', 'C2', 'D2', 'D3')
+
+## the diploids that were actually haploids are being categorized as haploid ancestors here. I just remove them later
 ancestors.haploid <- c('H1', 'H2', 'H3', 'C1', 'C3', 'D2', 'D3')
 ancestors.diploid <- c('D1')
 
@@ -199,20 +225,28 @@ d <- d %>% mutate(category = case_when(treatment == 'Blank' ~ 'Blank',
                               TRUE ~ 'DROPME'))
 
 
-## Dropping criteria (which I swear has a purpose)
-## Drop curves with too much variance. These are smooth curves with such as thing as reasonable variance
-## Remove things with high initial OD. We started with blanks. Anything other that those cannot be a good sign.
-## Drop curves with very high final slope. We are hoping to have observed saturation
+## Dropping criteria (which I swear I did not pull from thin air)
 
+## Their job here is done
 d$category[(d$category=='Blank')] <- 'DROPME'
+
+## The curves should be increasing for the most part
 d$category[d$monotone>=13] <- 'DROPME'
+
+## Drop curves with too much variance. These are smooth curves with such a thing as reasonable variance. And the cutoff is pretty generous anyways.
 d$category[d$OD.var>6e-04] <- 'DROPME'
+
+## Remove things with high initial OD. We started with blanks. Anything other that those cannot be a good sign because then the slope will depend on initial OD with a different relationship which would make modelling it a lot harder.
 d$category[d$initial>0.01] <- 'DROPME'
+
+## Drop curves with very high or low final slope. We are hoping to have observed saturation, so it should kind of flatten out
 d$category[d$final.slope>=0.03] <- 'DROPME'
 d$category[d$final.slope<=-0.03] <- 'DROPME'
-d$category[d$final<0.15] <- 'DROPME'
-## d$category[d$resids>15] <- 'DROPME'
 
+## Drop if the final value of OD is less the threshold. The culture should reach saturation
+d$category[d$final<0.15] <- 'DROPME'
+
+## Drop the DROPMEs
 data <- d[(d$category!='DROPME'),]
 
 cat(data$well[data$day=="1A"], file = "1A.txt")
@@ -277,7 +311,7 @@ d %>% group_by(day) %>% summarize(blank.val=mean(blank.val)) %>% ggplot() + geom
 ![](MA-Fitness-current_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
 
 ``` r
-d %>% group_by(day) %>% summarize(blank.sd=mean(blank.var)) %>% ggplot() + geom_col(aes(x=day,y=blank.sd))
+d %>% group_by(day) %>% summarize(blank.sd=mean(blank.sd)) %>% ggplot() + geom_col(aes(x=day,y=blank.sd))
 ```
 
 ![](MA-Fitness-current_files/figure-gfm/unnamed-chunk-5-2.png)<!-- -->
@@ -307,6 +341,7 @@ data_trim <- data %>%
 This plot is always something
 
 ``` r
+## Before trimming
 data %>% 
   filter(category %in% c('Ctrl.H', 'Ctrl.D')) %>%
   ggplot() +
@@ -318,6 +353,7 @@ data %>%
 ![](MA-Fitness-current_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
 
 ``` r
+## After trimming
 data_trim %>% 
   filter(category %in% c('Ctrl.H', 'Ctrl.D')) %>%
   ggplot() +
@@ -338,6 +374,7 @@ want to include that data. The ideal scenario would be having a cloud of
 points in these plots.
 
 ``` r
+## Before
 d %>% 
   ggplot() +
   geom_point(aes(x=initial, y=slope, color=category)) +
@@ -347,6 +384,7 @@ d %>%
 ![](MA-Fitness-current_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
 
 ``` r
+## After cleanin and trimming
 data_trim %>% 
   ggplot() +
   geom_point(aes(x=initial, y=slope, color=category)) +
@@ -380,11 +418,12 @@ df$MA <- case_when(
   df$category %in% c('Ctrl.H', 'Ctrl.D') ~ 'Ctrl',
 )
 
+
 df$initial_scaled <- df$initial/mean(df$initial)
-df$w1 <- 1/df$resids
-df$w2 <- sqrt(1/df$resids)
-df$w3 <- 1/df$resids.abs
-df$w4 <- (1/df$resids.abs)^2
+df$w1 <- 1/df$resids ## 1/sum(resid^2)
+df$w2 <- sqrt(1/df$resids) ## 1/sqrt(sum(resid^2))
+df$w3 <- 1/df$resids.abs ## 1/sum(abs(resid))
+df$w4 <- (1/df$resids.abs)^2 ## 1/sum(abs(resid))^2
   
 head(df) # MA lines
 ```
