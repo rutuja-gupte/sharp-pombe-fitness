@@ -258,7 +258,31 @@ cat(data$well[data$day=="2B"], file = "2B.txt")
 cat(data$well[data$day=="2C"], file = "2C.txt")
 cat(data$well[data$day=="2D"], file = "2D.txt")
 cat(data$well[data$day=="3A"], file = "3A.txt")
+
+head(data)
 ```
+
+    ##   well treatment      initial     final blank.val   blank.sd final.slope
+    ## 2   B1        H1 0.0020535098 0.7116785 0.1799465 0.01301512       0.003
+    ## 3   C1        H2 0.0020535098 0.7609285 0.1799465 0.01301512       0.001
+    ## 4   D1        H3 0.0003035098 0.6650535 0.1799465 0.01301512       0.003
+    ## 5   E1        D1 0.0015535098 0.5575535 0.1799465 0.01301512       0.001
+    ## 6   F1        D2 0.0023035098 0.4620535 0.1799465 0.01301512       0.004
+    ## 7   G1        D3 0.0013035098 0.5684285 0.1799465 0.01301512       0.001
+    ##      slope   resids resids.abs double_time monotone       OD.var batch day
+    ## 2 2.640040 4.896382   4.922268   0.2625517        0 4.899506e-05     1  1A
+    ## 3 2.797476 4.667765   4.881267   0.2477759        0 5.497615e-05     1  1A
+    ## 4 2.941911 3.205453   4.779578   0.2356112        0 3.603383e-05     1  1A
+    ## 5 2.865809 3.705777   4.358252   0.2418679        0 2.377293e-05     1  1A
+    ## 6 3.025559 4.854013   4.589752   0.2290972        0 7.162986e-06     1  1A
+    ## 7 2.698721 3.756736   4.271767   0.2568428        0 3.281226e-05     1  1A
+    ##   category
+    ## 2   Ctrl.H
+    ## 3   Ctrl.H
+    ## 4   Ctrl.H
+    ## 5   Ctrl.D
+    ## 6   Ctrl.H
+    ## 7   Ctrl.H
 
 To show that I did not pick the filtering thresholds from thin air
 
